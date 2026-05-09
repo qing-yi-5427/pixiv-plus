@@ -317,8 +317,8 @@
       }
       .pp-tags-list {
         display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
+        flex-direction: column;
+        gap: 4px;
       }
       .pp-tag {
         display: inline-block;
