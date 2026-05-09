@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PixivPlus Settings</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1>PixivPlus</h1>
+
+    <div class="field">
+      <label>Download Directory</label>
+      <div class="dir-path" id="dir-path">Checking...</div>
+      <button id="btn-reset-dir" class="dir-btn">Reset Directory</button>
+      <small>Directory is selected on first download.</small>
+    </div>
+
+    <hr>
+
+    <div class="field">
+      <label class="toggle-label">
+        <span>Hover Preview</span>
+        <input type="checkbox" id="hover-preview" checked>
+        <span class="toggle-switch"></span>
+      </label>
+    </div>
+
+    <div class="field" id="delay-field">
+      <label for="hover-delay">Preview Delay (ms)</label>
+      <input type="number" id="hover-delay" value="400" min="0" max="3000" step="50">
+    </div>
+
+    <hr>
+
+    <div class="field">
+      <label for="filename-template">Filename Template</label>
+      <input type="text" id="filename-template" value="{artist}-{title}-{id}">
+      <small>Available: <code>{artist}</code> <code>{title}</code> <code>{id}</code> <code>{page}</code></small>
+      <div class="naming-preview" id="filename-preview">Artist-Title-12345678.png</div>
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
