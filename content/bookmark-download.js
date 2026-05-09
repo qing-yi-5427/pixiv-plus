@@ -78,9 +78,127 @@
     }
   }
 
+  // --- Tag injection into image metadata ---
+
+  async function injectTags(blob, tags) {
+    const tagStr = tags.join(', ');
+    const buf = await blob.arrayBuffer();
+    const view = new Uint8Array(buf);
+
+    if (blob.type === 'image/png' || isPNG(view)) {
+      return injectPNGTags(buf, tagStr);
+    }
+    if (blob.type === 'image/jpeg' || isJPEG(view)) {
+      return injectJPEGXMP(buf, tagStr);
+    }
+    return blob;
+  }
+
+  function isPNG(v) { return v[0] === 0x89 && v[1] === 0x50; }
+  function isJPEG(v) { return v[0] === 0xFF && v[1] === 0xD8; }
+
+  function crc32(data) {
+    let crc = 0xFFFFFFFF;
+    const table = new Int32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      table[i] = c;
+    }
+    for (let i = 0; i < data.length; i++) {
+      crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function injectPNGTags(buf, tagStr) {
+    // PNG: insert tEXt chunk after IHDR
+    // tEXt chunk: keyword (null-terminated) + text
+    const keyword = new TextEncoder().encode('Keywords');
+    const text = new TextEncoder().encode(tagStr);
+    const chunkData = new Uint8Array(keyword.length + 1 + text.length);
+    chunkData.set(keyword, 0);
+    chunkData[keyword.length] = 0; // null separator
+    chunkData.set(text, keyword.length + 1);
+
+    const length = new Uint8Array(4);
+    new DataView(length.buffer).setUint32(0, chunkData.length);
+
+    const type = new TextEncoder().encode('tEXt');
+    const crcData = new Uint8Array(4 + chunkData.length);
+    crcData.set(type, 0);
+    crcData.set(chunkData, 4);
+    const crcVal = new Uint8Array(4);
+    new DataView(crcVal.buffer).setUint32(0, crc32(crcData));
+
+    // Find position after IHDR chunk (8 signature + 4 length + 4 type + data + 4 crc)
+    const ihdrLen = new DataView(buf).getUint32(8);
+    const insertPos = 8 + 4 + 4 + ihdrLen + 4; // sig + len + type + data + crc
+
+    const before = new Uint8Array(buf, 0, insertPos);
+    const after = new Uint8Array(buf, insertPos);
+
+    const result = new Uint8Array(before.length + 4 + 4 + chunkData.length + 4 + after.length);
+    result.set(before, 0);
+    let off = before.length;
+    result.set(length, off); off += 4;
+    result.set(type, off); off += 4;
+    result.set(chunkData, off); off += chunkData.length;
+    result.set(crcVal, off); off += 4;
+    result.set(after, off);
+
+    return new Blob([result], { type: 'image/png' });
+  }
+
+  function injectJPEGXMP(buf, tagStr) {
+    // JPEG: insert APP1 XMP segment after SOI marker
+    const dc = tagStr.includes('"') ? "'" : '"';
+    const xmp = [
+      '<?xpacket begin="\xEF\xBB\xBF" id="W5M0MpCehiHzreSzNTczkc9d"?>',
+      '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
+      '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"',
+      '         xmlns:dc="http://purl.org/dc/elements/1.1/">',
+      '<rdf:Description rdf:about="">',
+      `  <dc:subject><rdf:Bag>`,
+      ...tagStr.split(', ').map(t => `    <rdf:li>${escapeXML(t)}</rdf:li>`),
+      `  </rdf:Bag></dc:subject>`,
+      '</rdf:Description>',
+      '</rdf:RDF>',
+      '</x:xmpmeta>',
+      '<?xpacket end="w"?>'
+    ].join('\n');
+
+    const xmpBytes = new TextEncoder().encode(xmp);
+    // APP1 marker: FF E1 + 2 bytes length (includes length bytes themselves) + "http://ns.adobe.com/xap/1.0/\0" + xmp
+    const xmpNS = new TextEncoder().encode('http://ns.adobe.com/xap/1.0/\0');
+    const payload = new Uint8Array(xmpNS.length + xmpBytes.length);
+    payload.set(xmpNS, 0);
+    payload.set(xmpBytes, xmpNS.length);
+
+    const segLen = payload.length + 2; // +2 for length field itself
+    const app1 = new Uint8Array(2 + 2 + payload.length);
+    app1[0] = 0xFF; app1[1] = 0xE1; // APP1 marker
+    new DataView(app1.buffer).setUint16(2, segLen);
+    app1.set(payload, 4);
+
+    // Insert after SOI (first 2 bytes: FF D8)
+    const before = new Uint8Array(buf, 0, 2);
+    const after = new Uint8Array(buf, 2);
+    const result = new Uint8Array(2 + app1.length + after.length);
+    result.set(before, 0);
+    result.set(app1, 2);
+    result.set(after, 2 + app1.length);
+
+    return new Blob([result], { type: 'image/jpeg' });
+  }
+
+  function escapeXML(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
   // --- Download logic ---
 
-  async function downloadFile(url, filename) {
+  async function downloadFile(url, filename, tags) {
     const panel = window.PixivPlusDownloadPanel;
     const ac = new AbortController();
     activeFetches.set(url, filename);
@@ -112,7 +230,12 @@
 
       if (resp.error) throw new Error(resp.error);
 
-      const blob = await fetch(resp.dataUrl).then(r => r.blob());
+      let blob = await fetch(resp.dataUrl).then(r => r.blob());
+
+      // Inject tags into image metadata
+      if (tags && tags.length > 0) {
+        blob = await injectTags(blob, tags);
+      }
 
       const handle = await getDirHandle(true);
       if (handle) {
@@ -150,7 +273,7 @@
         const url = info.pageUrls[0]?.original;
         if (!url) throw new Error('No URL');
         const filename = window.PixivPlusAPI.generateFilename(info, 0);
-        downloadFile(url, filename);
+        downloadFile(url, filename, info.tags);
       } else {
         showMultiImageSelector(info);
       }
@@ -295,7 +418,7 @@
       for (const idx of selected) {
         const url = info.pageUrls[idx].original;
         const filename = window.PixivPlusAPI.generateFilename(info, idx);
-        downloadFile(url, filename);
+        downloadFile(url, filename, info.tags);
       }
       container.classList.remove('visible');
     };
