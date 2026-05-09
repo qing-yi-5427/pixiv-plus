@@ -529,7 +529,10 @@
 
     btnDownload.addEventListener('click', () => {
       if (currentWorkId && currentInfo) {
-        window.PixivPlusDownload.downloadWork(currentWorkId);
+        const url = currentInfo.pageUrls[currentPage]?.original;
+        if (!url) return;
+        const filename = window.PixivPlusAPI.generateFilename(currentInfo, currentPage);
+        window.PixivPlusDownload.downloadFile(url, filename, currentInfo.tags);
       }
     });
 
