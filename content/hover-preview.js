@@ -290,11 +290,7 @@
 
       .pp-tags-panel {
         display: none;
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        margin-bottom: 8px;
+        position: fixed;
         background: #16161a;
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 12px;
@@ -307,8 +303,8 @@
       }
       .pp-tags-panel.visible { display: block; }
       @keyframes pp-tags-in {
-        from { opacity:0; transform: translateX(-50%) translateY(4px); }
-        to { opacity:1; transform: translateX(-50%) translateY(0); }
+        from { opacity:0; transform: translateY(4px); }
+        to { opacity:1; transform: translateY(0); }
       }
       .pp-tags-title {
         color: #8A8F98;
@@ -454,7 +450,11 @@
     tagsPanel = document.createElement('div');
     tagsPanel.className = 'pp-tags-panel';
     panel.style.position = 'relative';
-    panel.appendChild(tagsPanel);
+
+    // Tags panel lives in overlay to avoid overflow:hidden clipping
+    tagsPanel = document.createElement('div');
+    tagsPanel.className = 'pp-tags-panel';
+    overlay.appendChild(tagsPanel);
 
     const hint = document.createElement('div');
     hint.className = 'pp-hint';
@@ -560,7 +560,6 @@
 
   function toggleTags() {
     if (!tagsPanel || !currentInfo) return;
-    console.log('[PixivPlus] toggleTags, tags:', currentInfo.tags);
     if (tagsPanel.classList.contains('visible')) {
       tagsPanel.classList.remove('visible');
       return;
@@ -587,6 +586,11 @@
       list.appendChild(a);
     }
     tagsPanel.appendChild(list);
+
+    // Position above the Tags button
+    const btnRect = btnTags.getBoundingClientRect();
+    tagsPanel.style.right = (window.innerWidth - btnRect.right) + 'px';
+    tagsPanel.style.bottom = (window.innerHeight - btnRect.top + 8) + 'px';
     tagsPanel.classList.add('visible');
   }
 
