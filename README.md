@@ -1,78 +1,78 @@
 # PixivPlus
 
-A Chrome extension (Manifest V3) that enhances the Pixiv browsing experience with hover preview, batch download, and image metadata embedding.
+Chrome 扩展插件（Manifest V3），为 Pixiv 增强悬浮预览、批量下载、图片标签写入等功能。
 
-## Features
+## 功能
 
-### Hover Preview
-- **Full-size preview** — Hover over any thumbnail to view the original image in a modern dark panel
-- **Drag-to-pan zoom** — Click to zoom in, drag to pan around, double-click to zoom out
-- **Page navigation** — Browse multi-page works with arrow buttons or keyboard (`←` `→`)
-- **Cross-work navigation** — Navigate between works on the current page
-- **Tags panel** — View all tags of the current work, click to search on Pixiv
-- **Configurable delay** — Adjust hover trigger delay in settings
+### 悬浮预览
+- **原图预览** — 鼠标悬停缩略图即可在深色面板中查看原图
+- **拖拽平移** — 单击放大，拖拽移动查看细节，双击退出放大
+- **多页翻页** — 通过侧栏按钮或键盘方向键（`←` `→`）浏览多页作品
+- **跨作品导航** — 在当前页面的作品间快速切换
+- **标签面板** — 查看作品所有标签，点击可直接跳转 Pixiv 搜索
+- **可调延迟** — 在设置中自定义悬浮触发延迟
 
-### Download
-- **Original quality** — Downloads original-resolution images via background service worker
-- **Single-page & multi-page** — Multi-page works show a selection grid
-- **Filename template** — Customize filenames with `{artist}`, `{title}`, `{id}`, `{page}`
-- **Custom download directory** — Pick any folder via File System Access API
-- **Progress panel** — Floating panel with download speed, progress bar, cancel/remove buttons
-- **Auto-close** — Panel automatically closes 3 seconds after all downloads complete
+### 下载
+- **原图画质** — 通过后台 Service Worker 下载原图分辨率图片
+- **单页 & 多页** — 多页作品弹出自定义选择面板，可勾选要下载的页面
+- **文件名模板** — 使用 `{artist}`、`{title}`、`{id}`、`{page}` 自定义文件名
+- **自定义目录** — 通过 File System Access API 选择任意下载文件夹
+- **进度面板** — 浮动面板显示下载速度、进度条，支持取消和删除
+- **自动关闭** — 所有下载完成后 3 秒自动收起面板
 
-### Tag Embedding
-- **PNG metadata** — Writes tags as XMP via iTXt chunk (viewable in Windows Properties)
-- **JPEG metadata** — Writes tags as XMP via APP1 segment (viewable in Windows Properties)
-- **Toggle** — Enable/disable tag embedding in plugin settings
+### 标签写入
+- **PNG 元数据** — 通过 iTXt chunk 写入 XMP 标签（可在 Windows 属性中查看）
+- **JPEG 元数据** — 通过 APP1 段写入 XMP 标签（可在 Windows 属性中查看）
+- **开关控制** — 在插件设置中可开启/关闭标签写入
 
-## Installation
+## 安装
 
-1. Download or clone this repository
-2. Open `chrome://extensions/` in Chrome
-3. Enable **Developer mode** (top right)
-4. Click **Load unpacked** and select the `pixiv-plus` folder
+1. 下载或克隆本仓库
+2. 在 Chrome 中打开 `chrome://extensions/`
+3. 开启右上角 **开发者模式**
+4. 点击 **加载已解压的扩展程序**，选择 `pixiv-plus` 文件夹
 
-## Settings
+## 设置
 
-Access via the PixivPlus icon in the Chrome toolbar:
+点击 Chrome 工具栏中的 PixivPlus 图标打开设置：
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Hover Preview | On | Enable/disable hover preview |
-| Preview Delay | 400ms | Delay before showing preview |
-| Embed Tags in Image | On | Write Pixiv tags into downloaded image metadata |
-| Filename Template | `{artist}-{title}-{id}` | Template for downloaded filenames |
+| 设置项 | 默认值 | 说明 |
+|--------|--------|------|
+| 悬浮预览 | 开启 | 开启/关闭悬浮预览功能 |
+| 预览延迟 | 400ms | 悬浮触发延迟时间 |
+| 写入图片标签 | 开启 | 将 Pixiv 标签写入下载图片的元数据 |
+| 文件名模板 | `{artist}-{title}-{id}` | 下载文件的命名模板 |
 
-## Tech Stack
+## 技术栈
 
-- **Manifest V3** Chrome Extension
-- **Shadow DOM** for all injected UI (style isolation)
-- **Background Service Worker** for CORS-free image fetching
-- **declarativeNetRequest** for Referer header injection on `i.pximg.net`
-- **File System Access API** for downloads to arbitrary directories
-- **Base64 data URL** transfer between service worker and content script
+- **Manifest V3** Chrome 扩展
+- **Shadow DOM** 隔离注入 UI 样式
+- **Background Service Worker** 绕过 CORS 获取图片
+- **declarativeNetRequest** 为 `i.pximg.net` 注入 Referer 请求头
+- **File System Access API** 下载到任意目录
+- **Base64 Data URL** 在 Service Worker 和 Content Script 间传输图片数据
 
-## File Structure
+## 文件结构
 
 ```
 pixiv-plus/
-├── manifest.json              # Manifest V3 config
-├── rules.json                 # declarativeNetRequest Referer rules
+├── manifest.json              # Manifest V3 配置
+├── rules.json                 # declarativeNetRequest Referer 规则
 ├── background/
-│   └── service-worker.js      # Settings API, image fetch with progress
+│   └── service-worker.js      # 设置接口、图片下载与进度上报
 ├── lib/
-│   └── pixiv-api.js           # /ajax/illust/{id} wrapper, caching, filename gen
+│   └── pixiv-api.js           # /ajax/illust/{id} 封装、缓存、文件名生成
 ├── content/
-│   ├── main.js                # Entry point, MutationObserver
-│   ├── hover-preview.js       # Hover preview overlay UI
-│   ├── bookmark-download.js   # Download logic, metadata injection
-│   ├── download-panel.js      # Floating progress panel
-│   └── style.css              # Download icon overlay on thumbnails
+│   ├── main.js                # 入口、MutationObserver 扫描缩略图
+│   ├── hover-preview.js       # 悬浮预览面板
+│   ├── bookmark-download.js   # 下载逻辑、元数据注入
+│   ├── download-panel.js      # 下载进度面板
+│   └── style.css              # 缩略图上的下载图标样式
 ├── popup/
-│   ├── popup.html             # Settings UI
-│   ├── popup.js               # Settings logic
-│   └── popup.css              # Settings styles
-└── icons/                     # Extension icons
+│   ├── popup.html             # 设置页面
+│   ├── popup.js               # 设置逻辑
+│   └── popup.css              # 设置样式
+└── icons/                     # 扩展图标
 ```
 
 ## License
