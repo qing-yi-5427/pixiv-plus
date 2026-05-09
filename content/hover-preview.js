@@ -14,12 +14,16 @@
   let btnTags = null;
   let tagsPanel = null;
   let btnClose = null;
+  let btnAvatar = null;
+  let btnFollow = null;
+  let labelFollow = null;
   let btnPrev = null;
   let btnNext = null;
   let pageInfoEl = null;
   let infoEl = null;
   let currentWorkId = null;
   let currentInfo = null;
+  let currentUserInfo = null;
   let currentPage = 0;
   let currentTriggerEl = null;
   let showTimer = null;
@@ -242,6 +246,40 @@
         opacity: 0.3;
         pointer-events: none;
       }
+      .pp-sidebar-btn.pp-follow-active {
+        color: #5E6AD2;
+      }
+
+      .pp-avatar-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        background: transparent;
+        border: 2px solid rgba(255,255,255,0.1);
+        border-radius: 50%;
+        cursor: pointer;
+        overflow: hidden;
+        padding: 0;
+        margin: 0 auto;
+        transition: border-color 0.15s, background 0.15s;
+      }
+      .pp-avatar-btn:hover {
+        border-color: rgba(255,255,255,0.25);
+        background: rgba(255,255,255,0.04);
+      }
+      .pp-avatar-btn.hidden { display: none; }
+      .pp-avatar-btn svg {
+        width: 18px;
+        height: 18px;
+        opacity: 0.4;
+      }
+      .pp-avatar-btn img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
 
       .pp-close-btn {
         color: #6B7080;
@@ -386,6 +424,20 @@
     const sep1 = document.createElement('div');
     sep1.className = 'pp-sidebar-sep';
 
+    btnAvatar = document.createElement('button');
+    btnAvatar.className = 'pp-avatar-btn';
+    btnAvatar.title = 'View artist page';
+    btnAvatar.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+
+    btnFollow = document.createElement('button');
+    btnFollow.className = 'pp-sidebar-btn';
+    btnFollow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>';
+    btnFollow.title = 'Follow artist';
+
+    labelFollow = document.createElement('div');
+    labelFollow.className = 'pp-sidebar-label';
+    labelFollow.textContent = 'Follow';
+
     btnDownload = document.createElement('button');
     btnDownload.className = 'pp-sidebar-btn';
     btnDownload.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
@@ -422,6 +474,9 @@
 
     sidebar.appendChild(btnClose);
     sidebar.appendChild(sep1);
+    sidebar.appendChild(btnAvatar);
+    sidebar.appendChild(btnFollow);
+    sidebar.appendChild(labelFollow);
     sidebar.appendChild(btnDownload);
     sidebar.appendChild(labelDownload);
     sidebar.appendChild(btnBookmark);
@@ -527,6 +582,31 @@
 
     btnClose.addEventListener('click', () => hide());
 
+    btnAvatar.addEventListener('click', () => {
+      if (currentInfo?.userId) {
+        window.open(`https://www.pixiv.net/users/${currentInfo.userId}`, '_blank');
+      }
+    });
+
+    btnFollow.addEventListener('click', async () => {
+      if (!currentInfo?.userId) return;
+      const userId = currentInfo.userId;
+      const wasFollowed = currentUserInfo?.isFollowed;
+
+      updateFollowState(!wasFollowed);
+
+      try {
+        if (wasFollowed) {
+          await window.PixivPlusAPI.unfollowUser(userId);
+        } else {
+          await window.PixivPlusAPI.followUser(userId);
+        }
+      } catch (err) {
+        updateFollowState(wasFollowed);
+        window.PixivPlusDownloadPanel?.showToast('Failed to update follow status', 'error');
+      }
+    });
+
     btnDownload.addEventListener('click', () => {
       if (currentWorkId && currentInfo) {
         const url = currentInfo.pageUrls[currentPage]?.original;
@@ -560,6 +640,21 @@
     btnNext.addEventListener('click', () => navigate(1));
 
     document.body.appendChild(host);
+  }
+
+  function updateFollowState(isFollowed) {
+    if (currentUserInfo) currentUserInfo.isFollowed = isFollowed;
+    if (isFollowed) {
+      btnFollow.classList.add('pp-follow-active');
+      btnFollow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>';
+      btnFollow.title = 'Unfollow artist';
+      if (labelFollow) labelFollow.textContent = 'Following';
+    } else {
+      btnFollow.classList.remove('pp-follow-active');
+      btnFollow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>';
+      btnFollow.title = 'Follow artist';
+      if (labelFollow) labelFollow.textContent = 'Follow';
+    }
   }
 
   function toggleTags() {
@@ -772,6 +867,9 @@
 
     imgEl.classList.add('hidden');
     errorEl.classList.add('hidden');
+    btnAvatar.classList.add('hidden');
+    btnFollow.classList.add('hidden');
+    if (labelFollow) labelFollow.style.display = 'none';
     btnDownload.classList.add('hidden');
     btnBookmark.classList.add('hidden');
     btnTags.classList.add('hidden');
@@ -801,6 +899,28 @@
       btnTags.classList.remove('hidden');
       updatePageUI();
 
+      // Load user info for avatar and follow status
+      if (info.userId) {
+        btnAvatar.classList.remove('hidden');
+        btnFollow.classList.remove('hidden');
+        if (labelFollow) labelFollow.style.display = '';
+        updateFollowState(false);
+
+        window.PixivPlusAPI.getUserInfo(info.userId).then(userInfo => {
+          if (currentWorkId !== workId) return;
+          currentUserInfo = userInfo;
+
+          if (userInfo.avatar) {
+            btnAvatar.innerHTML = '';
+            const img = document.createElement('img');
+            img.src = userInfo.avatar;
+            img.alt = info.artist;
+            btnAvatar.appendChild(img);
+          }
+          updateFollowState(userInfo.isFollowed);
+        }).catch(() => {});
+      }
+
       imgEl.src = url;
       imgEl.onload = () => {
         if (currentWorkId !== workId) return;
@@ -828,6 +948,9 @@
     btnDownload.classList.add('hidden');
     btnBookmark.classList.add('hidden');
     btnTags.classList.add('hidden');
+    btnAvatar.classList.add('hidden');
+    btnFollow.classList.add('hidden');
+    if (labelFollow) labelFollow.style.display = 'none';
     btnPrev.classList.add('hidden');
     btnNext.classList.add('hidden');
     pageInfoEl.textContent = '';
@@ -839,6 +962,7 @@
     cancelPending();
     currentWorkId = null;
     currentInfo = null;
+    currentUserInfo = null;
     currentPage = 0;
     zoomed = false;
     panX = 0;
