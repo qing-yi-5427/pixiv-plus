@@ -11,6 +11,8 @@
   let errorEl = null;
   let btnDownload = null;
   let btnBookmark = null;
+  let btnTags = null;
+  let tagsPanel = null;
   let btnClose = null;
   let btnPrev = null;
   let btnNext = null;
@@ -285,6 +287,59 @@
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         pointer-events: none;
       }
+
+      .pp-tags-panel {
+        display: none;
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        margin-bottom: 8px;
+        background: #16161a;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 12px;
+        padding: 12px;
+        max-width: 480px;
+        min-width: 200px;
+        box-shadow: 0 -8px 32px rgba(0,0,0,0.4);
+        z-index: 10;
+        animation: pp-tags-in 0.15s ease;
+      }
+      .pp-tags-panel.visible { display: block; }
+      @keyframes pp-tags-in {
+        from { opacity:0; transform: translateX(-50%) translateY(4px); }
+        to { opacity:1; transform: translateX(-50%) translateY(0); }
+      }
+      .pp-tags-title {
+        color: #8A8F98;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+      .pp-tags-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .pp-tag {
+        display: inline-block;
+        padding: 4px 10px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 6px;
+        color: #cdd6f4;
+        font-size: 12px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        cursor: pointer;
+        text-decoration: none;
+        transition: background 0.15s;
+      }
+      .pp-tag:hover {
+        background: rgba(94,106,210,0.2);
+        border-color: rgba(94,106,210,0.4);
+      }
     `;
     shadow.appendChild(style);
 
@@ -374,6 +429,19 @@
     sidebar.appendChild(labelDownload);
     sidebar.appendChild(btnBookmark);
     sidebar.appendChild(labelBookmark);
+
+    // Tags button
+    btnTags = document.createElement('button');
+    btnTags.className = 'pp-sidebar-btn';
+    btnTags.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>';
+    btnTags.title = 'Tags';
+
+    const labelTags = document.createElement('div');
+    labelTags.className = 'pp-sidebar-label';
+    labelTags.textContent = 'Tags';
+
+    sidebar.appendChild(btnTags);
+    sidebar.appendChild(labelTags);
     sidebar.appendChild(sep2);
     sidebar.appendChild(btnPrev);
     sidebar.appendChild(pageInfoEl);
@@ -381,6 +449,12 @@
 
     panel.appendChild(main);
     panel.appendChild(sidebar);
+
+    // Tags panel (positioned relative to panel)
+    tagsPanel = document.createElement('div');
+    tagsPanel.className = 'pp-tags-panel';
+    panel.style.position = 'relative';
+    panel.appendChild(tagsPanel);
 
     const hint = document.createElement('div');
     hint.className = 'pp-hint';
@@ -470,9 +544,49 @@
     });
 
     btnPrev.addEventListener('click', () => navigate(-1));
+
+    btnTags.addEventListener('click', () => toggleTags());
+
+    // Close tags panel when clicking outside
+    panel.addEventListener('click', (e) => {
+      if (tagsPanel.classList.contains('visible') && !tagsPanel.contains(e.target) && e.target !== btnTags) {
+        tagsPanel.classList.remove('visible');
+      }
+    });
     btnNext.addEventListener('click', () => navigate(1));
 
     document.body.appendChild(host);
+  }
+
+  function toggleTags() {
+    if (!tagsPanel || !currentInfo) return;
+    if (tagsPanel.classList.contains('visible')) {
+      tagsPanel.classList.remove('visible');
+      return;
+    }
+
+    const tags = currentInfo.tags || [];
+    if (tags.length === 0) return;
+
+    tagsPanel.innerHTML = '';
+    const title = document.createElement('div');
+    title.className = 'pp-tags-title';
+    title.textContent = 'Tags';
+    tagsPanel.appendChild(title);
+
+    const list = document.createElement('div');
+    list.className = 'pp-tags-list';
+    for (const tag of tags) {
+      const a = document.createElement('a');
+      a.className = 'pp-tag';
+      a.textContent = tag;
+      a.href = `https://www.pixiv.net/tags/${encodeURIComponent(tag)}/artworks`;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      list.appendChild(a);
+    }
+    tagsPanel.appendChild(list);
+    tagsPanel.classList.add('visible');
   }
 
   function exitZoom() {
@@ -642,10 +756,12 @@
     errorEl.classList.add('hidden');
     btnDownload.classList.add('hidden');
     btnBookmark.classList.add('hidden');
+    btnTags.classList.add('hidden');
     pageInfoEl.textContent = '';
     infoEl.textContent = '';
     spinnerEl.classList.remove('hidden');
     overlay.classList.add('visible');
+    if (tagsPanel) tagsPanel.classList.remove('visible');
 
     try {
       const info = await window.PixivPlusAPI.getWorkInfo(workId);
@@ -664,6 +780,7 @@
       infoEl.textContent = `${info.artist} — ${info.title}`;
       btnDownload.classList.remove('hidden');
       btnBookmark.classList.remove('hidden');
+      btnTags.classList.remove('hidden');
       updatePageUI();
 
       imgEl.src = url;
@@ -692,9 +809,11 @@
     errorEl.classList.remove('hidden');
     btnDownload.classList.add('hidden');
     btnBookmark.classList.add('hidden');
+    btnTags.classList.add('hidden');
     btnPrev.classList.add('hidden');
     btnNext.classList.add('hidden');
     pageInfoEl.textContent = '';
+    if (tagsPanel) tagsPanel.classList.remove('visible');
     setTimeout(hide, 2000);
   }
 
