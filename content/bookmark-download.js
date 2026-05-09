@@ -112,35 +112,44 @@
   }
 
   function injectPNGTags(buf, tagStr) {
-    // PNG: insert tEXt chunk after IHDR
-    // tEXt chunk: keyword (null-terminated) + text
-    const keyword = new TextEncoder().encode('Keywords');
-    const text = new TextEncoder().encode(tagStr);
-    const chunkData = new Uint8Array(keyword.length + 1 + text.length);
-    chunkData.set(keyword, 0);
-    chunkData[keyword.length] = 0; // null separator
-    chunkData.set(text, keyword.length + 1);
+    // PNG: insert iTXt chunk with XMP after IHDR
+    // This is how Windows reads PNG "Tags" property
+    const xmp = buildXMP(tagStr);
+
+    // iTXt chunk: keyword\0 compression_flag compression_method language_tag\0 translated_keyword\0 text
+    const keyword = new TextEncoder().encode('XML:com.adobe.xmp');
+    const text = new TextEncoder().encode(xmp);
+    // keyword\0 + compression_flag(1) + compression_method(1) + language_tag\0 + translated_keyword\0 + text
+    const chunkData = new Uint8Array(keyword.length + 1 + 1 + 1 + 1 + text.length);
+    let off = 0;
+    chunkData.set(keyword, off); off += keyword.length;
+    chunkData[off++] = 0; // null terminator for keyword
+    chunkData[off++] = 0; // compression flag (0 = uncompressed)
+    chunkData[off++] = 0; // compression method
+    chunkData[off++] = 0; // null terminator for language tag (empty)
+    // translated keyword is empty, already 0 from initialization
+    chunkData.set(text, off);
 
     const length = new Uint8Array(4);
     new DataView(length.buffer).setUint32(0, chunkData.length);
 
-    const type = new TextEncoder().encode('tEXt');
+    const type = new TextEncoder().encode('iTXt');
     const crcData = new Uint8Array(4 + chunkData.length);
     crcData.set(type, 0);
     crcData.set(chunkData, 4);
     const crcVal = new Uint8Array(4);
     new DataView(crcVal.buffer).setUint32(0, crc32(crcData));
 
-    // Find position after IHDR chunk (8 signature + 4 length + 4 type + data + 4 crc)
+    // Find position after IHDR chunk
     const ihdrLen = new DataView(buf).getUint32(8);
-    const insertPos = 8 + 4 + 4 + ihdrLen + 4; // sig + len + type + data + crc
+    const insertPos = 8 + 4 + 4 + ihdrLen + 4;
 
     const before = new Uint8Array(buf, 0, insertPos);
     const after = new Uint8Array(buf, insertPos);
 
     const result = new Uint8Array(before.length + 4 + 4 + chunkData.length + 4 + after.length);
     result.set(before, 0);
-    let off = before.length;
+    off = before.length;
     result.set(length, off); off += 4;
     result.set(type, off); off += 4;
     result.set(chunkData, off); off += chunkData.length;
@@ -150,23 +159,28 @@
     return new Blob([result], { type: 'image/png' });
   }
 
-  function injectJPEGXMP(buf, tagStr) {
-    // JPEG: insert APP1 XMP segment after SOI marker
-    const dc = tagStr.includes('"') ? "'" : '"';
-    const xmp = [
+  function buildXMP(tagStr) {
+    const tags = tagStr.split(', ');
+    const items = tags.map(t => `      <rdf:li>${escapeXML(t)}</rdf:li>`).join('\n');
+    return [
       '<?xpacket begin="\xEF\xBB\xBF" id="W5M0MpCehiHzreSzNTczkc9d"?>',
       '<x:xmpmeta xmlns:x="adobe:ns:meta/">',
       '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"',
       '         xmlns:dc="http://purl.org/dc/elements/1.1/">',
       '<rdf:Description rdf:about="">',
-      `  <dc:subject><rdf:Bag>`,
-      ...tagStr.split(', ').map(t => `    <rdf:li>${escapeXML(t)}</rdf:li>`),
-      `  </rdf:Bag></dc:subject>`,
+      '  <dc:subject><rdf:Bag>',
+      items,
+      '  </rdf:Bag></dc:subject>',
       '</rdf:Description>',
       '</rdf:RDF>',
       '</x:xmpmeta>',
       '<?xpacket end="w"?>'
     ].join('\n');
+  }
+
+  function injectJPEGXMP(buf, tagStr) {
+    // JPEG: insert APP1 XMP segment after SOI marker
+    const xmp = buildXMP(tagStr);
 
     const xmpBytes = new TextEncoder().encode(xmp);
     // APP1 marker: FF E1 + 2 bytes length (includes length bytes themselves) + "http://ns.adobe.com/xap/1.0/\0" + xmp
