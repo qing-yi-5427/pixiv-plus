@@ -560,6 +560,7 @@
 
   function toggleTags() {
     if (!tagsPanel || !currentInfo) return;
+    console.log('[PixivPlus] toggleTags, tags:', currentInfo.tags);
     if (tagsPanel.classList.contains('visible')) {
       tagsPanel.classList.remove('visible');
       return;
