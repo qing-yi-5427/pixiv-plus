@@ -99,6 +99,8 @@
         max-height: none;
         overflow: auto;
         cursor: zoom-out;
+        align-items: flex-start;
+        justify-content: flex-start;
       }
       .pp-img {
         max-width: 85vw;
