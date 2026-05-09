@@ -120,14 +120,14 @@
     const keyword = new TextEncoder().encode('XML:com.adobe.xmp');
     const text = new TextEncoder().encode(xmp);
     // keyword\0 + compression_flag(1) + compression_method(1) + language_tag\0 + translated_keyword\0 + text
-    const chunkData = new Uint8Array(keyword.length + 1 + 1 + 1 + 1 + text.length);
+    const chunkData = new Uint8Array(keyword.length + 1 + 1 + 1 + 1 + 1 + text.length);
     let off = 0;
     chunkData.set(keyword, off); off += keyword.length;
     chunkData[off++] = 0; // null terminator for keyword
     chunkData[off++] = 0; // compression flag (0 = uncompressed)
     chunkData[off++] = 0; // compression method
     chunkData[off++] = 0; // null terminator for language tag (empty)
-    // translated keyword is empty, already 0 from initialization
+    chunkData[off++] = 0; // null terminator for translated keyword (empty)
     chunkData.set(text, off);
 
     const length = new Uint8Array(4);
