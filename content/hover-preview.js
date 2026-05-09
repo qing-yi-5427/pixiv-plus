@@ -291,9 +291,6 @@
       .pp-tags-panel {
         display: none;
         position: fixed;
-        top: 50%;
-        left: 24px;
-        transform: translateY(-50%);
         background: #16161a;
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 12px;
@@ -307,8 +304,8 @@
       }
       .pp-tags-panel.visible { display: block; }
       @keyframes pp-tags-in {
-        from { opacity:0; transform: translateY(-50%) translateX(-12px); }
-        to { opacity:1; transform: translateY(-50%) translateX(0); }
+        from { opacity:0; transform: translateX(8px); }
+        to { opacity:1; transform: translateX(0); }
       }
       .pp-tags-title {
         color: #8A8F98;
@@ -590,6 +587,16 @@
       list.appendChild(a);
     }
     tagsPanel.appendChild(list);
+
+    // Position to the left of the panel, vertically centered
+    const panelEl = host.shadowRoot.querySelector('.pp-panel');
+    if (panelEl) {
+      const pr = panelEl.getBoundingClientRect();
+      tagsPanel.style.top = (pr.top + pr.height / 2) + 'px';
+      tagsPanel.style.transform = 'translateY(-50%)';
+      tagsPanel.style.right = (window.innerWidth - pr.left + 12) + 'px';
+      tagsPanel.style.left = 'auto';
+    }
     tagsPanel.classList.add('visible');
   }
 
