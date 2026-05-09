@@ -291,20 +291,24 @@
       .pp-tags-panel {
         display: none;
         position: fixed;
+        top: 50%;
+        left: 24px;
+        transform: translateY(-50%);
         background: #16161a;
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 12px;
-        padding: 12px;
-        max-width: 480px;
-        min-width: 200px;
-        box-shadow: 0 -8px 32px rgba(0,0,0,0.4);
+        padding: 14px 16px;
+        max-width: 320px;
+        max-height: 80vh;
+        overflow-y: auto;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
         z-index: 10;
-        animation: pp-tags-in 0.15s ease;
+        animation: pp-tags-in 0.2s cubic-bezier(0.16,1,0.3,1);
       }
       .pp-tags-panel.visible { display: block; }
       @keyframes pp-tags-in {
-        from { opacity:0; transform: translateY(4px); }
-        to { opacity:1; transform: translateY(0); }
+        from { opacity:0; transform: translateY(-50%) translateX(-12px); }
+        to { opacity:1; transform: translateY(-50%) translateX(0); }
       }
       .pp-tags-title {
         color: #8A8F98;
@@ -586,11 +590,6 @@
       list.appendChild(a);
     }
     tagsPanel.appendChild(list);
-
-    // Position above the Tags button
-    const btnRect = btnTags.getBoundingClientRect();
-    tagsPanel.style.right = (window.innerWidth - btnRect.right) + 'px';
-    tagsPanel.style.bottom = (window.innerHeight - btnRect.top + 8) + 'px';
     tagsPanel.classList.add('visible');
   }
 
