@@ -1,5 +1,5 @@
 // PixivPlus - Hover Preview
-// Modern dark panel with right-side action bar, page navigation, drag-to-pan zoom
+// Modern dark panel with right-side action bar, page/work navigation, drag-to-pan zoom
 
 (() => {
   'use strict';
@@ -19,6 +19,7 @@
   let currentWorkId = null;
   let currentInfo = null;
   let currentPage = 0;
+  let currentTriggerEl = null;
   let showTimer = null;
   let pendingWorkId = null;
   let zoomed = false;
@@ -45,6 +46,27 @@
     if (changes.hoverPreview !== undefined) enabled = changes.hoverPreview.newValue;
     if (changes.hoverDelay !== undefined) delay = changes.hoverDelay.newValue;
   });
+
+  function getWorkList() {
+    const links = document.querySelectorAll('a[href*="/artworks/"]');
+    const seen = new Set();
+    const result = [];
+    for (const link of links) {
+      const match = link.href.match(/\/artworks\/(\d+)/);
+      if (!match) continue;
+      const id = match[1];
+      if (seen.has(id)) continue;
+      seen.add(id);
+      result.push({ id, el: link });
+    }
+    return result;
+  }
+
+  function findWorkIndex() {
+    if (!currentWorkId) return -1;
+    const list = getWorkList();
+    return list.findIndex(w => w.id === currentWorkId);
+  }
 
   function ensureUI() {
     if (host) return;
@@ -336,7 +358,7 @@
     btnPrev = document.createElement('button');
     btnPrev.className = 'pp-sidebar-btn';
     btnPrev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>';
-    btnPrev.title = 'Previous page (←)';
+    btnPrev.title = 'Previous (←)';
 
     pageInfoEl = document.createElement('div');
     pageInfoEl.className = 'pp-page-info';
@@ -344,7 +366,7 @@
     btnNext = document.createElement('button');
     btnNext.className = 'pp-sidebar-btn';
     btnNext.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>';
-    btnNext.title = 'Next page (→)';
+    btnNext.title = 'Next (→)';
 
     sidebar.appendChild(btnClose);
     sidebar.appendChild(sep1);
@@ -410,7 +432,6 @@
       if (dragMoved) return;
       const now = Date.now();
       if (zoomed) {
-        // Double-click to zoom out
         if (now - lastClickTime < 350) {
           exitZoom();
           lastClickTime = 0;
@@ -419,7 +440,6 @@
         }
         return;
       }
-      // Not zoomed: single click to zoom in
       const w = shadow.getElementById('pp-img-wrap');
       const m = shadow.querySelector('.pp-main');
       zoomed = true;
@@ -449,8 +469,8 @@
       }
     });
 
-    btnPrev.addEventListener('click', () => goToPage(currentPage - 1));
-    btnNext.addEventListener('click', () => goToPage(currentPage + 1));
+    btnPrev.addEventListener('click', () => navigate(-1));
+    btnNext.addEventListener('click', () => navigate(1));
 
     document.body.appendChild(host);
   }
@@ -490,18 +510,59 @@
 
   function updatePageUI() {
     if (!currentInfo) return;
-    const total = currentInfo.pageUrls.length;
-    if (total <= 1) {
-      btnPrev.classList.add('hidden');
-      btnNext.classList.add('hidden');
+    const totalPages = currentInfo.pageUrls.length;
+    const workIdx = findWorkIndex();
+    const workList = getWorkList();
+    const atFirstWork = workIdx <= 0;
+    const atLastWork = workIdx >= workList.length - 1;
+
+    if (totalPages > 1) {
+      const atFirstPage = currentPage === 0;
+      const atLastPage = currentPage === totalPages - 1;
+      btnPrev.classList.toggle('disabled', atFirstPage && atFirstWork);
+      btnNext.classList.toggle('disabled', atLastPage && atLastWork);
+      pageInfoEl.textContent = `${currentPage + 1}/${totalPages}`;
+    } else {
+      btnPrev.classList.toggle('disabled', atFirstWork);
+      btnNext.classList.toggle('disabled', atLastWork);
       pageInfoEl.textContent = '';
-      return;
     }
+
     btnPrev.classList.remove('hidden');
     btnNext.classList.remove('hidden');
-    btnPrev.classList.toggle('disabled', currentPage === 0);
-    btnNext.classList.toggle('disabled', currentPage === total - 1);
-    pageInfoEl.textContent = `${currentPage + 1}/${total}`;
+  }
+
+  // Navigate: direction = -1 (prev) or +1 (next)
+  // Multi-page: flip pages within same work, cross to adjacent work at edges
+  // Single-page: switch between works directly
+  function navigate(dir) {
+    if (!currentInfo) return;
+    const totalPages = currentInfo.pageUrls.length;
+
+    if (totalPages > 1) {
+      const nextPage = currentPage + dir;
+      if (nextPage >= 0 && nextPage < totalPages) {
+        goToPage(nextPage);
+        return;
+      }
+      // Cross to adjacent work
+      switchWork(dir);
+    } else {
+      switchWork(dir);
+    }
+  }
+
+  function switchWork(dir) {
+    const workList = getWorkList();
+    const idx = workList.findIndex(w => w.id === currentWorkId);
+    if (idx < 0) return;
+
+    const nextIdx = idx + dir;
+    if (nextIdx < 0 || nextIdx >= workList.length) return;
+
+    const nextWork = workList[nextIdx];
+    currentTriggerEl = nextWork.el;
+    show(nextWork.id);
   }
 
   function goToPage(page) {
@@ -514,7 +575,6 @@
     const url = currentInfo.pageUrls[page]?.original;
     if (!url) return;
 
-    // Reset pan when switching pages
     if (zoomed) {
       panX = 0;
       panY = 0;
@@ -546,6 +606,7 @@
     if (workId === currentWorkId) return;
 
     cancelPending();
+    currentTriggerEl = thumbnailEl;
     pendingWorkId = workId;
     showTimer = setTimeout(() => {
       if (pendingWorkId === workId) show(workId);
@@ -581,8 +642,6 @@
     errorEl.classList.add('hidden');
     btnDownload.classList.add('hidden');
     btnBookmark.classList.add('hidden');
-    btnPrev.classList.add('hidden');
-    btnNext.classList.add('hidden');
     pageInfoEl.textContent = '';
     infoEl.textContent = '';
     spinnerEl.classList.remove('hidden');
@@ -648,6 +707,7 @@
     panX = 0;
     panY = 0;
     dragging = false;
+    currentTriggerEl = null;
     if (overlay) {
       overlay.classList.remove('visible');
       imgEl.src = '';
@@ -670,8 +730,8 @@
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && currentWorkId) hide();
-    if (e.key === 'ArrowLeft' && currentWorkId) goToPage(currentPage - 1);
-    if (e.key === 'ArrowRight' && currentWorkId) goToPage(currentPage + 1);
+    if (e.key === 'ArrowLeft' && currentWorkId) navigate(-1);
+    if (e.key === 'ArrowRight' && currentWorkId) navigate(1);
   });
 
   window.PixivPlusHover = { requestShow, cancelOrHide, extractWorkId };
