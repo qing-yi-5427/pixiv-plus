@@ -6,6 +6,7 @@
 
   let dirHandle = null;
   const activeFetches = new Map(); // url -> filename
+  const abortControllers = new Map(); // url -> AbortController
 
   // --- IndexedDB for directory handle ---
 
@@ -81,14 +82,17 @@
 
   async function downloadFile(url, filename) {
     const panel = window.PixivPlusDownloadPanel;
+    const ac = new AbortController();
     activeFetches.set(url, filename);
+    abortControllers.set(url, ac);
 
     panel.updateDownload({
       filename,
       state: 'in_progress',
       bytesReceived: 0,
       totalBytes: 0,
-      speed: 'Connecting...'
+      speed: 'Connecting...',
+      url
     });
 
     try {
@@ -97,7 +101,14 @@
         url
       });
 
+      if (ac.signal.aborted) {
+        activeFetches.delete(url);
+        abortControllers.delete(url);
+        return;
+      }
+
       activeFetches.delete(url);
+      abortControllers.delete(url);
 
       if (resp.error) throw new Error(resp.error);
 
@@ -107,22 +118,24 @@
       if (handle) {
         await writeFile(handle, filename, blob);
         panel.updateDownload({ filename, state: 'complete' });
-        panel.showToast(`Downloaded: ${filename}`, 'success');
         return;
       }
 
       await browserDownload(blob, filename);
       panel.updateDownload({ filename, state: 'complete' });
-      panel.showToast(`Downloaded: ${filename}`, 'success');
 
     } catch (err) {
       activeFetches.delete(url);
+      abortControllers.delete(url);
+      if (ac.signal.aborted) {
+        panel.updateDownload({ filename, state: 'cancelled' });
+        return;
+      }
       panel.updateDownload({
         filename,
         state: 'interrupted',
         error: err.message
       });
-      panel.showToast(`Failed: ${err.message}`, 'error');
     }
   }
 
@@ -133,7 +146,6 @@
         window.PixivPlusDownloadPanel.showToast('Ugoira not supported', 'warning');
         return;
       }
-      if (info.pageCount === 1) {
         const url = info.pageUrls[0]?.original;
         if (!url) throw new Error('No URL');
         const filename = window.PixivPlusAPI.generateFilename(info, 0);
@@ -142,7 +154,7 @@
         showMultiImageSelector(info);
       }
     } catch (err) {
-      window.PixivPlusDownloadPanel.showToast(`Error: ${err.message}`, 'error');
+      // Error shown in download panel
     }
   }
 
@@ -338,5 +350,14 @@
     document.body.appendChild(selectorHost);
   }
 
-  window.PixivPlusDownload = { downloadFile, downloadWork, addDownloadIcon };
+  function cancelDownload(url) {
+    const ac = abortControllers.get(url);
+    if (ac) {
+      ac.abort();
+      abortControllers.delete(url);
+    }
+    activeFetches.delete(url);
+  }
+
+  window.PixivPlusDownload = { downloadFile, downloadWork, addDownloadIcon, cancelDownload };
 })();

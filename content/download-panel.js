@@ -117,7 +117,25 @@
         text-align: right;
       }
       .pp-download-status.complete { color: #40c057; }
+      .pp-download-status.cancelled { color: #f59f00; }
       .pp-download-status.error { color: #ff6b6b; }
+      .pp-download-actions {
+        display: flex;
+        gap: 4px;
+        margin-left: 6px;
+        flex-shrink: 0;
+      }
+      .pp-download-actions button {
+        background: none;
+        border: none;
+        color: #6c7086;
+        cursor: pointer;
+        padding: 2px 4px;
+        font-size: 14px;
+        line-height: 1;
+        border-radius: 3px;
+      }
+      .pp-download-actions button:hover { color: #fff; background: rgba(255,255,255,0.08); }
       .pp-panel-footer {
         padding: 8px 14px;
         border-top: 1px solid #313244;
@@ -190,7 +208,11 @@
     });
     shadow.getElementById('pp-panel-clear').addEventListener('click', () => {
       const body = shadow.getElementById('pp-panel-body');
-      body.querySelectorAll('.pp-download-item[data-state="complete"], .pp-download-item[data-state="interrupted"]').forEach(el => el.remove());
+      body.querySelectorAll('.pp-download-item[data-state="in_progress"]').forEach(el => {
+        const url = el.dataset.url;
+        if (url) window.PixivPlusDownload?.cancelDownload(url);
+      });
+      body.innerHTML = '';
       downloads.clear();
       updateCount(shadow);
     });
@@ -219,19 +241,50 @@
     if (!item) {
       item = document.createElement('div');
       item.className = 'pp-download-item';
+      item.dataset.url = data.url || '';
       item.innerHTML = `
         <div class="pp-download-name" title="${escapeHtml(data.filename)}">${escapeHtml(data.filename)}</div>
         <div class="pp-download-bar-row">
           <div class="pp-download-bar"><div class="pp-download-bar-fill"></div></div>
           <div class="pp-download-status"></div>
+          <div class="pp-download-actions">
+            <button class="pp-dl-cancel" title="Cancel">&#10005;</button>
+            <button class="pp-dl-remove" title="Remove">&#128465;</button>
+          </div>
         </div>
       `;
       body.appendChild(item);
       downloads.set(data.filename, item);
+
+      // Cancel button
+      item.querySelector('.pp-dl-cancel').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const url = item.dataset.url;
+        if (url && item.dataset.state === 'in_progress') {
+          window.PixivPlusDownload?.cancelDownload(url);
+        }
+        item.remove();
+        downloads.delete(data.filename);
+        updateCount(shadow);
+      });
+
+      // Remove button
+      item.querySelector('.pp-dl-remove').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const url = item.dataset.url;
+        if (url && item.dataset.state === 'in_progress') {
+          window.PixivPlusDownload?.cancelDownload(url);
+        }
+        item.remove();
+        downloads.delete(data.filename);
+        updateCount(shadow);
+      });
     }
 
     const fill = item.querySelector('.pp-download-bar-fill');
     const status = item.querySelector('.pp-download-status');
+
+    const actions = item.querySelector('.pp-download-actions');
 
     if (data.state === 'in_progress') {
       clearTimeout(autoCloseTimer);
@@ -242,15 +295,15 @@
       status.className = 'pp-download-status';
       status.textContent = `${pct}% ${data.speed || ''}`;
       item.dataset.state = 'in_progress';
+      if (actions) actions.style.display = '';
     } else if (data.state === 'complete') {
       fill.style.width = '100%';
       fill.className = 'pp-download-bar-fill complete';
       status.className = 'pp-download-status complete';
-      status.textContent = 'Done ✓';
+      status.textContent = 'Done';
       item.dataset.state = 'complete';
-      showToast(`Downloaded: ${data.filename}`, 'success');
+      if (actions) actions.style.display = 'none';
 
-      // Auto-close panel 3s after all downloads complete
       clearTimeout(autoCloseTimer);
       autoCloseTimer = setTimeout(() => {
         const active = body.querySelectorAll('.pp-download-item[data-state="in_progress"]').length;
@@ -264,7 +317,13 @@
       status.className = 'pp-download-status error';
       status.textContent = data.error || 'Failed';
       item.dataset.state = 'interrupted';
-      showToast(`Failed: ${data.filename}`, 'error');
+      if (actions) actions.style.display = 'none';
+    } else if (data.state === 'cancelled') {
+      fill.className = 'pp-download-bar-fill error';
+      status.className = 'pp-download-status cancelled';
+      status.textContent = 'Cancelled';
+      item.dataset.state = 'cancelled';
+      if (actions) actions.style.display = 'none';
     }
 
     updateCount(shadow);
