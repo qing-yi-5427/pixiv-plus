@@ -1,10 +1,8 @@
 // PixivPlus - Hover Preview
-// Shows original image overlay with zoom toggle, download and bookmark actions
+// Modern dark panel with right-side action bar
 
 (() => {
   'use strict';
-
-  const SHOW_DELAY = 400;
 
   let host = null;
   let overlay = null;
@@ -13,6 +11,7 @@
   let errorEl = null;
   let btnDownload = null;
   let btnBookmark = null;
+  let btnClose = null;
   let infoEl = null;
   let currentWorkId = null;
   let currentInfo = null;
@@ -45,13 +44,39 @@
       .pp-overlay {
         position: fixed; top:0; left:0; right:0; bottom:0;
         display: none; align-items: center; justify-content: center;
-        flex-direction: column;
-        pointer-events: none;
-        background: rgba(0,0,0,0.6);
-        animation: pp-in 0.15s ease;
+        background: rgba(0,0,0,0.7);
+        backdrop-filter: blur(4px);
+        animation: pp-in 0.2s cubic-bezier(0.16,1,0.3,1);
       }
       .pp-overlay.visible { display: flex; pointer-events: auto; }
       @keyframes pp-in { from { opacity:0; } to { opacity:1; } }
+
+      .pp-panel {
+        display: flex;
+        background: #0a0a0c;
+        border-radius: 16px;
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 1px rgba(255,255,255,0.1);
+        overflow: hidden;
+        max-width: 92vw;
+        max-height: 90vh;
+        animation: pp-panel-in 0.25s cubic-bezier(0.16,1,0.3,1);
+      }
+      @keyframes pp-panel-in {
+        from { opacity:0; transform: scale(0.95) translateY(8px); }
+        to { opacity:1; transform: scale(1) translateY(0); }
+      }
+
+      .pp-main {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-width: 0;
+        flex: 1;
+        padding: 12px;
+        position: relative;
+      }
 
       .pp-img-wrap {
         position: relative;
@@ -59,9 +84,11 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        max-width: 90vw;
-        max-height: calc(90vh - 60px);
+        max-width: 85vw;
+        max-height: calc(85vh - 60px);
         overflow: hidden;
+        border-radius: 8px;
+        background: #111114;
       }
       .pp-img-wrap.zoomed {
         max-width: none;
@@ -70,11 +97,10 @@
         cursor: zoom-out;
       }
       .pp-img {
-        max-width: 90vw;
-        max-height: calc(90vh - 60px);
+        max-width: 85vw;
+        max-height: calc(85vh - 60px);
         object-fit: contain;
-        border-radius: 4px;
-        box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+        display: block;
         transition: none;
       }
       .pp-img-wrap.zoomed .pp-img {
@@ -87,8 +113,8 @@
       .pp-spinner.hidden { display: none; }
       .pp-spin {
         width: 36px; height: 36px;
-        border: 3px solid rgba(255,255,255,0.2);
-        border-top-color: #0096fa;
+        border: 3px solid rgba(255,255,255,0.1);
+        border-top-color: #5E6AD2;
         border-radius: 50%;
         animation: pp-spin 0.7s linear infinite;
       }
@@ -97,48 +123,91 @@
       .pp-error {
         position: absolute;
         color: #ff6b6b; font-size: 13px;
-        background: rgba(0,0,0,0.8);
-        padding: 6px 14px; border-radius: 4px;
+        background: #1a1a1e;
+        border: 1px solid rgba(255,107,107,0.2);
+        padding: 8px 16px; border-radius: 8px;
       }
       .pp-error.hidden { display: none; }
 
       .pp-info {
-        color: rgba(255,255,255,0.6);
+        color: #8A8F98;
         font-size: 12px;
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        margin-top: 8px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        margin-top: 10px;
         text-align: center;
-        max-width: 80vw;
+        max-width: 80%;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
 
-      .pp-actions {
-        display: flex; gap: 10px;
-        margin-top: 10px;
+      .pp-sidebar {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 12px 8px;
+        gap: 4px;
+        background: #0e0e11;
+        border-left: 1px solid rgba(255,255,255,0.06);
+        min-width: 52px;
       }
-      .pp-action-btn {
-        display: flex; align-items: center; gap: 5px;
-        padding: 6px 14px;
-        background: rgba(255,255,255,0.1);
-        border: 1px solid rgba(255,255,255,0.2);
-        border-radius: 6px;
-        color: #cdd6f4;
-        font-size: 12px;
+
+      .pp-sidebar-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        background: transparent;
+        border: none;
+        border-radius: 10px;
+        color: #8A8F98;
         cursor: pointer;
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        transition: background 0.15s;
+        transition: background 0.15s, color 0.15s;
       }
-      .pp-action-btn:hover { background: rgba(255,255,255,0.2); }
-      .pp-action-btn svg { width: 16px; height: 16px; }
+      .pp-sidebar-btn:hover {
+        background: rgba(255,255,255,0.08);
+        color: #EDEDEF;
+      }
+      .pp-sidebar-btn svg {
+        width: 20px;
+        height: 20px;
+      }
+      .pp-sidebar-btn.hidden { display: none; }
+
+      .pp-close-btn {
+        color: #6B7080;
+        margin-bottom: 8px;
+      }
+      .pp-close-btn:hover {
+        background: rgba(255,255,255,0.06);
+        color: #EDEDEF;
+      }
+
+      .pp-sidebar-sep {
+        width: 24px;
+        height: 1px;
+        background: rgba(255,255,255,0.06);
+        margin: 4px 0;
+      }
+
+      .pp-sidebar-label {
+        color: #5A5F6A;
+        font-size: 9px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        text-align: center;
+        margin-top: -2px;
+        user-select: none;
+      }
 
       .pp-hint {
         position: fixed;
-        bottom: 12px;
-        color: rgba(255,255,255,0.3);
+        bottom: 16px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: rgba(255,255,255,0.25);
         font-size: 11px;
-        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         pointer-events: none;
       }
     `;
@@ -146,6 +215,14 @@
 
     overlay = document.createElement('div');
     overlay.className = 'pp-overlay';
+
+    // Panel: main + sidebar
+    const panel = document.createElement('div');
+    panel.className = 'pp-panel';
+
+    // Main area
+    const main = document.createElement('div');
+    main.className = 'pp-main';
 
     const wrap = document.createElement('div');
     wrap.className = 'pp-img-wrap';
@@ -168,41 +245,65 @@
     infoEl = document.createElement('div');
     infoEl.className = 'pp-info';
 
-    // Action buttons
-    const actions = document.createElement('div');
-    actions.className = 'pp-actions';
+    main.appendChild(wrap);
+    main.appendChild(infoEl);
+
+    // Sidebar
+    const sidebar = document.createElement('div');
+    sidebar.className = 'pp-sidebar';
+
+    btnClose = document.createElement('button');
+    btnClose.className = 'pp-sidebar-btn pp-close-btn';
+    btnClose.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    btnClose.title = 'Close (Esc)';
+
+    const sep1 = document.createElement('div');
+    sep1.className = 'pp-sidebar-sep';
 
     btnBookmark = document.createElement('button');
-    btnBookmark.className = 'pp-action-btn';
-    btnBookmark.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>Bookmark';
+    btnBookmark.className = 'pp-sidebar-btn';
+    btnBookmark.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>';
+    btnBookmark.title = 'Bookmark';
+
+    const labelBookmark = document.createElement('div');
+    labelBookmark.className = 'pp-sidebar-label';
+    labelBookmark.textContent = 'Like';
 
     btnDownload = document.createElement('button');
-    btnDownload.className = 'pp-action-btn';
-    btnDownload.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Download';
+    btnDownload.className = 'pp-sidebar-btn';
+    btnDownload.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+    btnDownload.title = 'Download';
 
-    actions.appendChild(btnBookmark);
-    actions.appendChild(btnDownload);
+    const labelDownload = document.createElement('div');
+    labelDownload.className = 'pp-sidebar-label';
+    labelDownload.textContent = 'Save';
+
+    sidebar.appendChild(btnClose);
+    sidebar.appendChild(sep1);
+    sidebar.appendChild(btnBookmark);
+    sidebar.appendChild(labelBookmark);
+    sidebar.appendChild(btnDownload);
+    sidebar.appendChild(labelDownload);
+
+    panel.appendChild(main);
+    panel.appendChild(sidebar);
 
     const hint = document.createElement('div');
     hint.className = 'pp-hint';
-    hint.textContent = 'Click image to zoom · Click backdrop to close';
+    hint.textContent = 'Click image to zoom · Esc to close';
 
-    overlay.appendChild(wrap);
-    overlay.appendChild(infoEl);
-    overlay.appendChild(actions);
+    overlay.appendChild(panel);
     overlay.appendChild(hint);
     shadow.appendChild(overlay);
 
     // --- Events ---
 
-    // Click backdrop (overlay itself, not children) to close
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
         hide();
       }
     });
 
-    // Click image to toggle zoom
     imgEl.addEventListener('click', () => {
       const w = shadow.getElementById('pp-img-wrap');
       zoomed = !zoomed;
@@ -213,14 +314,14 @@
       }
     });
 
-    // Download button
+    btnClose.addEventListener('click', () => hide());
+
     btnDownload.addEventListener('click', () => {
       if (currentWorkId && currentInfo) {
         window.PixivPlusDownload.downloadWork(currentWorkId);
       }
     });
 
-    // Bookmark button - trigger Pixiv's native bookmark
     btnBookmark.addEventListener('click', () => {
       if (!currentWorkId) return;
       const btn = document.querySelector('button[data-click-label="bookmark"], button[aria-label*="bookmark" i], button[aria-label*="ブックマーク"]');
@@ -270,8 +371,8 @@
 
     imgEl.classList.add('hidden');
     errorEl.classList.add('hidden');
-    btnDownload.style.display = 'none';
-    btnBookmark.style.display = 'none';
+    btnDownload.classList.add('hidden');
+    btnBookmark.classList.add('hidden');
     infoEl.textContent = '';
     spinnerEl.classList.remove('hidden');
     overlay.classList.add('visible');
@@ -291,8 +392,8 @@
       if (!url) throw new Error('No original URL');
 
       infoEl.textContent = `${info.artist} — ${info.title}`;
-      btnDownload.style.display = '';
-      btnBookmark.style.display = '';
+      btnDownload.classList.remove('hidden');
+      btnBookmark.classList.remove('hidden');
 
       imgEl.src = url;
       imgEl.onload = () => {
@@ -318,8 +419,8 @@
     imgEl.classList.add('hidden');
     errorEl.textContent = msg;
     errorEl.classList.remove('hidden');
-    btnDownload.style.display = 'none';
-    btnBookmark.style.display = 'none';
+    btnDownload.classList.add('hidden');
+    btnBookmark.classList.add('hidden');
     setTimeout(hide, 2000);
   }
 
