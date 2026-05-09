@@ -593,14 +593,13 @@
     if (panelEl) {
       const pr = panelEl.getBoundingClientRect();
       const gap = 12;
-      const availW = pr.left - gap - 16; // 16px margin from screen edge
-      const w = Math.min(Math.max(availW, 160), 360);
+      const availW = pr.left - gap - 8;
       tagsPanel.style.top = (pr.top + pr.height / 2) + 'px';
       tagsPanel.style.transform = 'translateY(-50%)';
-      tagsPanel.style.left = (pr.left - gap - w) + 'px';
-      tagsPanel.style.maxWidth = w + 'px';
+      tagsPanel.style.right = (window.innerWidth - pr.left + gap) + 'px';
+      tagsPanel.style.left = 'auto';
+      tagsPanel.style.maxWidth = Math.min(availW, 360) + 'px';
       tagsPanel.style.width = 'fit-content';
-      tagsPanel.style.right = 'auto';
     }
     tagsPanel.classList.add('visible');
   }
