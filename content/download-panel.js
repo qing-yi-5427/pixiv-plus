@@ -210,6 +210,11 @@
       panelVisible = true;
     }
 
+    // Ensure panel host is last in DOM so it renders above hover preview
+    if (panelHost.nextElementSibling) {
+      document.body.appendChild(panelHost);
+    }
+
     let item = downloads.get(data.filename);
     if (!item) {
       item = document.createElement('div');
