@@ -23,10 +23,11 @@
         right: 20px;
         width: 340px;
         max-height: 400px;
-        background: #1e1e2e;
-        border-radius: 10px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-        color: #cdd6f4;
+        background: #0a0a0c;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        box-shadow: 0 24px 80px rgba(0,0,0,0.6), 0 0 1px rgba(255,255,255,0.1);
+        color: #EDEDEF;
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
         font-size: 13px;
         display: none;
@@ -44,15 +45,15 @@
         padding: 10px 14px;
         cursor: pointer;
         user-select: none;
-        border-bottom: 1px solid #313244;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
       }
-      .pp-panel-header:hover { background: #252536; }
+      .pp-panel-header:hover { background: rgba(255,255,255,0.04); }
       .pp-panel-title {
         font-weight: 600;
         font-size: 13px;
       }
       .pp-panel-count {
-        color: #0096fa;
+        color: #5E6AD2;
         margin-left: 6px;
       }
       .pp-panel-controls {
@@ -62,13 +63,15 @@
       .pp-panel-controls button {
         background: none;
         border: none;
-        color: #a6adc8;
+        color: #8A8F98;
         cursor: pointer;
         font-size: 16px;
         line-height: 1;
         padding: 2px 4px;
+        border-radius: 4px;
+        transition: color 0.15s, background 0.15s;
       }
-      .pp-panel-controls button:hover { color: #fff; }
+      .pp-panel-controls button:hover { color: #EDEDEF; background: rgba(255,255,255,0.06); }
       .pp-panel-body {
         overflow-y: auto;
         flex: 1;
@@ -77,12 +80,12 @@
       }
       .pp-download-item {
         padding: 8px 14px;
-        border-bottom: 1px solid #252536;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
       }
       .pp-download-item:last-child { border-bottom: none; }
       .pp-download-name {
         font-size: 12px;
-        color: #a6adc8;
+        color: #8A8F98;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -96,29 +99,29 @@
       .pp-download-bar {
         flex: 1;
         height: 4px;
-        background: #313244;
+        background: rgba(255,255,255,0.08);
         border-radius: 2px;
         overflow: hidden;
       }
       .pp-download-bar-fill {
         height: 100%;
-        background: #0096fa;
+        background: #5E6AD2;
         border-radius: 2px;
         transition: width 0.3s ease;
         width: 0%;
       }
-      .pp-download-bar-fill.complete { background: #40c057; }
-      .pp-download-bar-fill.error { background: #ff6b6b; }
+      .pp-download-bar-fill.complete { background: rgba(94,106,210,0.6); }
+      .pp-download-bar-fill.error { background: rgba(255,107,107,0.7); }
       .pp-download-status {
         font-size: 11px;
-        color: #6c7086;
+        color: #5A5F6A;
         white-space: nowrap;
         min-width: 80px;
         text-align: right;
       }
-      .pp-download-status.complete { color: #40c057; }
-      .pp-download-status.cancelled { color: #f59f00; }
-      .pp-download-status.error { color: #ff6b6b; }
+      .pp-download-status.complete { color: #5E6AD2; }
+      .pp-download-status.cancelled { color: #8A8F98; }
+      .pp-download-status.error { color: rgba(255,107,107,0.8); }
       .pp-download-actions {
         display: flex;
         gap: 4px;
@@ -128,30 +131,32 @@
       .pp-download-actions button {
         background: none;
         border: none;
-        color: #6c7086;
+        color: #5A5F6A;
         cursor: pointer;
         padding: 2px 4px;
         font-size: 14px;
         line-height: 1;
-        border-radius: 3px;
+        border-radius: 4px;
+        transition: color 0.15s, background 0.15s;
       }
-      .pp-download-actions button:hover { color: #fff; background: rgba(255,255,255,0.08); }
+      .pp-download-actions button:hover { color: #EDEDEF; background: rgba(255,255,255,0.08); }
       .pp-panel-footer {
         padding: 8px 14px;
-        border-top: 1px solid #313244;
+        border-top: 1px solid rgba(255,255,255,0.06);
         display: flex;
         justify-content: flex-end;
       }
       .pp-panel-footer button {
-        padding: 4px 12px;
-        background: #313244;
-        border: none;
-        color: #a6adc8;
-        border-radius: 4px;
+        padding: 6px 14px;
+        background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.08);
+        color: #8A8F98;
+        border-radius: 8px;
         cursor: pointer;
         font-size: 12px;
+        transition: background 0.15s, color 0.15s;
       }
-      .pp-panel-footer button:hover { background: #45475a; }
+      .pp-panel-footer button:hover { background: rgba(255,255,255,0.1); color: #EDEDEF; }
 
       /* Toast */
       .pp-toast {
@@ -159,24 +164,25 @@
         bottom: 430px;
         right: 20px;
         padding: 10px 16px;
-        border-radius: 8px;
+        border-radius: 10px;
         font-size: 13px;
         font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-        color: #fff;
+        color: #EDEDEF;
         pointer-events: none;
         transform: translateX(120%);
-        transition: transform 0.3s ease;
+        transition: transform 0.3s cubic-bezier(0.16,1,0.3,1);
         z-index: 2147483647;
         max-width: 340px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        border: 1px solid rgba(255,255,255,0.1);
       }
       .pp-toast.visible { transform: translateX(0); }
-      .pp-toast.info { background: #0096fa; }
-      .pp-toast.success { background: #40c057; }
-      .pp-toast.error { background: #ff6b6b; }
-      .pp-toast.warning { background: #f59f00; color: #1e1e2e; }
+      .pp-toast.info { background: rgba(14,14,17,0.95); border-color: rgba(94,106,210,0.3); }
+      .pp-toast.success { background: rgba(14,14,17,0.95); border-color: rgba(94,106,210,0.5); }
+      .pp-toast.error { background: rgba(14,14,17,0.95); border-color: rgba(255,107,107,0.3); }
+      .pp-toast.warning { background: rgba(14,14,17,0.95); border-color: rgba(255,180,50,0.3); }
     `;
     shadow.appendChild(style);
 

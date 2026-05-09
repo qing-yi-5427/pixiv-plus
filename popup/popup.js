@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dirPath.textContent = 'Not set — will prompt on first download';
         return;
       }
-      dirPath.textContent = resp.name ? `📁 ${resp.name}` : 'Not set — will prompt on first download';
+      dirPath.textContent = resp.name || 'Not set — will prompt on first download';
     });
   });
 

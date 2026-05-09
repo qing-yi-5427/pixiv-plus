@@ -6,8 +6,8 @@
 
 body {
   width: 320px;
-  background: #1e1e2e;
-  color: #cdd6f4;
+  background: #0a0a0c;
+  color: #EDEDEF;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13px;
 }
@@ -20,7 +20,7 @@ h1 {
   font-size: 18px;
   font-weight: 700;
   margin-bottom: 16px;
-  color: #0096fa;
+  color: #5E6AD2;
 }
 
 .field {
@@ -32,49 +32,50 @@ label {
   font-weight: 600;
   margin-bottom: 4px;
   font-size: 13px;
-  color: #a6adc8;
+  color: #8A8F98;
 }
 
 input[type="text"],
 input[type="number"] {
   width: 100%;
   padding: 8px 10px;
-  background: #313244;
-  border: 1px solid #45475a;
-  border-radius: 6px;
-  color: #cdd6f4;
+  background: #111114;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  color: #EDEDEF;
   font-size: 13px;
   outline: none;
+  transition: border-color 0.15s;
 }
 
 input[type="text"]:focus,
 input[type="number"]:focus {
-  border-color: #0096fa;
+  border-color: #5E6AD2;
 }
 
 small {
   display: block;
   margin-top: 4px;
   font-size: 11px;
-  color: #6c7086;
+  color: #5A5F6A;
 }
 
 .naming-preview {
   padding: 8px 10px;
-  background: #181825;
-  border-radius: 6px;
+  background: #0e0e11;
+  border-radius: 8px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 12px;
-  color: #a6adc8;
+  color: #8A8F98;
   word-break: break-all;
 }
 
 button {
   width: 100%;
   padding: 10px;
-  background: #0096fa;
+  background: #5E6AD2;
   border: none;
-  border-radius: 6px;
+  border-radius: 10px;
   color: #fff;
   font-size: 14px;
   font-weight: 600;
@@ -83,7 +84,7 @@ button {
 }
 
 button:hover {
-  background: #0070d0;
+  background: #4a58b8;
 }
 
 .status {
@@ -94,7 +95,7 @@ button:hover {
 }
 
 .status.success {
-  color: #40c057;
+  color: #5E6AD2;
 }
 
 /* Toggle switch */
@@ -104,7 +105,7 @@ button:hover {
   justify-content: space-between;
   cursor: pointer;
   font-weight: 600;
-  color: #a6adc8;
+  color: #8A8F98;
 }
 
 .toggle-label input {
@@ -114,7 +115,7 @@ button:hover {
 .toggle-switch {
   width: 40px;
   height: 22px;
-  background: #45475a;
+  background: rgba(255,255,255,0.12);
   border-radius: 11px;
   position: relative;
   transition: background 0.2s;
@@ -128,13 +129,13 @@ button:hover {
   left: 3px;
   width: 16px;
   height: 16px;
-  background: #cdd6f4;
+  background: #EDEDEF;
   border-radius: 50%;
   transition: transform 0.2s;
 }
 
 .toggle-label input:checked + .toggle-switch {
-  background: #0096fa;
+  background: #5E6AD2;
 }
 
 .toggle-label input:checked + .toggle-switch::after {
@@ -143,17 +144,17 @@ button:hover {
 
 hr {
   border: none;
-  border-top: 1px solid #313244;
+  border-top: 1px solid rgba(255,255,255,0.06);
   margin: 14px 0;
 }
 
 .dir-btn {
   width: 100%;
   padding: 8px;
-  background: #313244;
-  border: 1px solid #45475a;
-  border-radius: 6px;
-  color: #cdd6f4;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+  color: #8A8F98;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
@@ -161,22 +162,12 @@ hr {
 }
 
 .dir-btn:hover {
-  background: #45475a;
+  background: rgba(255,255,255,0.1);
 }
 
 .dir-path {
   margin-top: 6px;
   font-size: 12px;
-  color: #6c7086;
+  color: #5A5F6A;
   padding: 4px 0;
-}
-
-.naming-preview {
-  padding: 8px 10px;
-  background: #181825;
-  border-radius: 6px;
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 12px;
-  color: #a6adc8;
-  word-break: break-all;
 }
