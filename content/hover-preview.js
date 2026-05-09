@@ -80,6 +80,13 @@
         flex: 1;
         padding: 12px;
         position: relative;
+        overflow: hidden;
+      }
+      .pp-main.zoomed {
+        padding: 0;
+      }
+      .pp-main.zoomed .pp-info {
+        display: none;
       }
 
       .pp-img-wrap {
@@ -88,7 +95,7 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        max-width: 85vw;
+        max-width: 100%;
         max-height: calc(85vh - 60px);
         overflow: hidden;
         border-radius: 8px;
@@ -97,13 +104,17 @@
       .pp-img-wrap.zoomed {
         max-width: none;
         max-height: none;
+        width: 100%;
+        height: 90vh;
+        flex: 1;
         overflow: auto;
         cursor: zoom-out;
         align-items: flex-start;
         justify-content: flex-start;
+        border-radius: 0;
       }
       .pp-img {
-        max-width: 85vw;
+        max-width: 100%;
         max-height: calc(85vh - 60px);
         object-fit: contain;
         display: block;
@@ -112,6 +123,9 @@
       .pp-img-wrap.zoomed .pp-img {
         max-width: none;
         max-height: none;
+        min-width: 100%;
+        min-height: 100%;
+        object-fit: none;
       }
       .pp-img.hidden { display: none; }
 
@@ -353,12 +367,10 @@
 
     imgEl.addEventListener('click', () => {
       const w = shadow.getElementById('pp-img-wrap');
+      const m = shadow.querySelector('.pp-main');
       zoomed = !zoomed;
-      if (zoomed) {
-        w.classList.add('zoomed');
-      } else {
-        w.classList.remove('zoomed');
-      }
+      w.classList.toggle('zoomed', zoomed);
+      m.classList.toggle('zoomed', zoomed);
     });
 
     btnClose.addEventListener('click', () => hide());
@@ -460,7 +472,9 @@
     ensureUI();
 
     const w = host.shadowRoot.getElementById('pp-img-wrap');
+    const m = host.shadowRoot.querySelector('.pp-main');
     w.classList.remove('zoomed');
+    if (m) m.classList.remove('zoomed');
 
     imgEl.classList.add('hidden');
     errorEl.classList.add('hidden');
