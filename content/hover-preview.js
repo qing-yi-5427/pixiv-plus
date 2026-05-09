@@ -295,11 +295,11 @@
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 12px;
         padding: 14px 16px;
-        max-width: 320px;
         max-height: 80vh;
         overflow-y: auto;
         box-shadow: 0 8px 32px rgba(0,0,0,0.5);
         z-index: 10;
+        box-sizing: border-box;
         animation: pp-tags-in 0.2s cubic-bezier(0.16,1,0.3,1);
       }
       .pp-tags-panel.visible { display: block; }
@@ -592,10 +592,14 @@
     const panelEl = host.shadowRoot.querySelector('.pp-panel');
     if (panelEl) {
       const pr = panelEl.getBoundingClientRect();
+      const gap = 12;
+      const availW = pr.left - gap - 16; // 16px margin from screen edge
+      const w = Math.min(Math.max(availW, 160), 360);
       tagsPanel.style.top = (pr.top + pr.height / 2) + 'px';
       tagsPanel.style.transform = 'translateY(-50%)';
-      tagsPanel.style.right = (window.innerWidth - pr.left + 12) + 'px';
-      tagsPanel.style.left = 'auto';
+      tagsPanel.style.left = (pr.left - gap - w) + 'px';
+      tagsPanel.style.width = w + 'px';
+      tagsPanel.style.right = 'auto';
     }
     tagsPanel.classList.add('visible');
   }
