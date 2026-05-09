@@ -590,21 +590,6 @@
 
     btnFollow.addEventListener('click', async () => {
       if (!currentInfo?.userId) return;
-      const userId = currentInfo.userId;
-      const wasFollowed = currentUserInfo?.isFollowed;
-
-      updateFollowState(!wasFollowed);
-
-      try {
-        if (wasFollowed) {
-          await window.PixivPlusAPI.unfollowUser(userId);
-        } else {
-          await window.PixivPlusAPI.followUser(userId);
-        }
-      } catch (err) {
-        updateFollowState(wasFollowed);
-        window.PixivPlusDownloadPanel?.showToast('Failed to update follow status', 'error');
-      }
     });
 
     btnDownload.addEventListener('click', () => {
