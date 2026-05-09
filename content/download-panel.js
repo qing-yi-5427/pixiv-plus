@@ -7,11 +7,12 @@
   let panelHost = null;
   let downloads = new Map(); // filename -> element
   let panelVisible = false;
+  let autoCloseTimer = null;
 
   function init() {
     panelHost = document.createElement('div');
     panelHost.id = 'pp-panel-host';
-    panelHost.style.cssText = 'position:fixed;bottom:0;right:0;width:100%;height:100%;pointer-events:none;z-index:2147483647;';
+    panelHost.style.cssText = 'position:fixed;bottom:0;right:0;width:100%;height:100%;pointer-events:none;z-index:2147483649;';
     const shadow = panelHost.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');
@@ -228,6 +229,8 @@
     const status = item.querySelector('.pp-download-status');
 
     if (data.state === 'in_progress') {
+      clearTimeout(autoCloseTimer);
+      autoCloseTimer = null;
       const pct = data.totalBytes > 0 ? Math.round((data.bytesReceived / data.totalBytes) * 100) : 0;
       fill.style.width = `${pct}%`;
       fill.className = 'pp-download-bar-fill';
@@ -242,12 +245,15 @@
       item.dataset.state = 'complete';
       showToast(`Downloaded: ${data.filename}`, 'success');
 
-      // Auto-remove after 30s
-      setTimeout(() => {
-        item.remove();
-        downloads.delete(data.filename);
-        updateCount(shadow);
-      }, 30000);
+      // Auto-close panel 3s after all downloads complete
+      clearTimeout(autoCloseTimer);
+      autoCloseTimer = setTimeout(() => {
+        const active = body.querySelectorAll('.pp-download-item[data-state="in_progress"]').length;
+        if (active === 0) {
+          panel.classList.remove('visible');
+          panelVisible = false;
+        }
+      }, 3000);
     } else if (data.state === 'interrupted') {
       fill.className = 'pp-download-bar-fill error';
       status.className = 'pp-download-status error';
