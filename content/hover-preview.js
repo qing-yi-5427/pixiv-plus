@@ -598,7 +598,8 @@
       tagsPanel.style.top = (pr.top + pr.height / 2) + 'px';
       tagsPanel.style.transform = 'translateY(-50%)';
       tagsPanel.style.left = (pr.left - gap - w) + 'px';
-      tagsPanel.style.width = w + 'px';
+      tagsPanel.style.maxWidth = w + 'px';
+      tagsPanel.style.width = 'fit-content';
       tagsPanel.style.right = 'auto';
     }
     tagsPanel.classList.add('visible');
