@@ -1,5 +1,5 @@
 // PixivPlus - Hover Preview
-// Modern dark panel with right-side action bar and page navigation
+// Modern dark panel with right-side action bar, page navigation, drag-to-pan zoom
 
 (() => {
   'use strict';
@@ -22,6 +22,15 @@
   let showTimer = null;
   let pendingWorkId = null;
   let zoomed = false;
+
+  // Drag state
+  let dragging = false;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let panX = 0;
+  let panY = 0;
+  let panStartX = 0;
+  let panStartY = 0;
 
   let enabled = true;
   let delay = 400;
@@ -107,11 +116,14 @@
         width: 100%;
         height: 90vh;
         flex: 1;
-        overflow: auto;
-        cursor: zoom-out;
+        overflow: hidden;
+        cursor: grab;
         align-items: flex-start;
         justify-content: flex-start;
         border-radius: 0;
+      }
+      .pp-img-wrap.zoomed.dragging {
+        cursor: grabbing;
       }
       .pp-img {
         max-width: 100%;
@@ -119,6 +131,8 @@
         object-fit: contain;
         display: block;
         transition: none;
+        user-select: none;
+        -webkit-user-drag: none;
       }
       .pp-img-wrap.zoomed .pp-img {
         max-width: none;
@@ -126,6 +140,7 @@
         min-width: 100%;
         min-height: 100%;
         object-fit: none;
+        transform-origin: 0 0;
       }
       .pp-img.hidden { display: none; }
 
@@ -287,7 +302,6 @@
     const sidebar = document.createElement('div');
     sidebar.className = 'pp-sidebar';
 
-    // Close
     btnClose = document.createElement('button');
     btnClose.className = 'pp-sidebar-btn pp-close-btn';
     btnClose.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
@@ -296,7 +310,6 @@
     const sep1 = document.createElement('div');
     sep1.className = 'pp-sidebar-sep';
 
-    // Download (first action)
     btnDownload = document.createElement('button');
     btnDownload.className = 'pp-sidebar-btn';
     btnDownload.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
@@ -306,7 +319,6 @@
     labelDownload.className = 'pp-sidebar-label';
     labelDownload.textContent = 'Save';
 
-    // Bookmark
     btnBookmark = document.createElement('button');
     btnBookmark.className = 'pp-sidebar-btn';
     btnBookmark.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg>';
@@ -319,17 +331,14 @@
     const sep2 = document.createElement('div');
     sep2.className = 'pp-sidebar-sep';
 
-    // Page navigation: Prev
     btnPrev = document.createElement('button');
     btnPrev.className = 'pp-sidebar-btn';
     btnPrev.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>';
     btnPrev.title = 'Previous page (←)';
 
-    // Page indicator
     pageInfoEl = document.createElement('div');
     pageInfoEl.className = 'pp-page-info';
 
-    // Page navigation: Next
     btnNext = document.createElement('button');
     btnNext.className = 'pp-sidebar-btn';
     btnNext.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>';
@@ -351,7 +360,7 @@
 
     const hint = document.createElement('div');
     hint.className = 'pp-hint';
-    hint.textContent = 'Click image to zoom · ← → navigate pages · Esc to close';
+    hint.textContent = 'Click image to zoom · Drag to pan · ← → navigate · Esc to close';
 
     overlay.appendChild(panel);
     overlay.appendChild(hint);
@@ -365,12 +374,44 @@
       }
     });
 
-    imgEl.addEventListener('click', () => {
+    // Zoom toggle on click (only without drag)
+    wrap.addEventListener('mousedown', (e) => {
+      if (!zoomed) return;
+      e.preventDefault();
+      dragging = true;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      panStartX = panX;
+      panStartY = panY;
+      wrap.classList.add('dragging');
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      panX = panStartX + dx;
+      panY = panStartY + dy;
+      clampAndApplyPan();
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!dragging) return;
+      dragging = false;
+      const w = host?.shadowRoot?.getElementById('pp-img-wrap');
+      if (w) w.classList.remove('dragging');
+    });
+
+    imgEl.addEventListener('click', (e) => {
+      if (zoomed) return;
       const w = shadow.getElementById('pp-img-wrap');
       const m = shadow.querySelector('.pp-main');
-      zoomed = !zoomed;
-      w.classList.toggle('zoomed', zoomed);
-      m.classList.toggle('zoomed', zoomed);
+      zoomed = true;
+      panX = 0;
+      panY = 0;
+      applyPan();
+      w.classList.add('zoomed');
+      m.classList.add('zoomed');
     });
 
     btnClose.addEventListener('click', () => hide());
@@ -398,6 +439,28 @@
     document.body.appendChild(host);
   }
 
+  function applyPan() {
+    if (!imgEl) return;
+    imgEl.style.transform = `translate(${panX}px, ${panY}px)`;
+  }
+
+  function clampAndApplyPan() {
+    const wrap = host?.shadowRoot?.getElementById('pp-img-wrap');
+    if (!wrap || !imgEl) return;
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const imgW = imgEl.naturalWidth;
+    const imgH = imgEl.naturalHeight;
+
+    const maxPanX = Math.max(0, (imgW - wrapRect.width) / 2);
+    const maxPanY = Math.max(0, (imgH - wrapRect.height) / 2);
+
+    panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
+    panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
+
+    applyPan();
+  }
+
   function updatePageUI() {
     if (!currentInfo) return;
     const total = currentInfo.pageUrls.length;
@@ -423,6 +486,13 @@
     currentPage = page;
     const url = currentInfo.pageUrls[page]?.original;
     if (!url) return;
+
+    // Reset pan when switching pages
+    if (zoomed) {
+      panX = 0;
+      panY = 0;
+      applyPan();
+    }
 
     imgEl.classList.add('hidden');
     spinnerEl.classList.remove('hidden');
@@ -469,12 +539,16 @@
     currentWorkId = workId;
     currentPage = 0;
     zoomed = false;
+    panX = 0;
+    panY = 0;
     ensureUI();
 
     const w = host.shadowRoot.getElementById('pp-img-wrap');
     const m = host.shadowRoot.querySelector('.pp-main');
     w.classList.remove('zoomed');
+    w.classList.remove('dragging');
     if (m) m.classList.remove('zoomed');
+    applyPan();
 
     imgEl.classList.add('hidden');
     errorEl.classList.add('hidden');
@@ -544,11 +618,15 @@
     currentInfo = null;
     currentPage = 0;
     zoomed = false;
+    panX = 0;
+    panY = 0;
+    dragging = false;
     if (overlay) {
       overlay.classList.remove('visible');
       imgEl.src = '';
       imgEl.onload = null;
       imgEl.onerror = null;
+      imgEl.style.transform = '';
     }
   }
 
