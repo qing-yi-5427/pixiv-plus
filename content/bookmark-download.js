@@ -421,17 +421,6 @@
       item.addEventListener('click', (e) => {
         if (e.target !== check) check.checked = !check.checked;
       });
-      // Hover preview
-      item.addEventListener('mouseenter', () => {
-        previewTimer = setTimeout(() => {
-          const rect = item.getBoundingClientRect();
-          showPreview(pageUrl.regular || pageUrl.original, rect);
-        }, 300);
-      });
-      item.addEventListener('mouseleave', () => {
-        clearTimeout(previewTimer);
-        hidePreview();
-      });
       grid.appendChild(item);
     }
 
@@ -477,37 +466,8 @@
       #pp-btn-cancel:hover { background:#45475a; }
       #pp-btn-download-selected { background:#0096fa;color:#fff; }
       #pp-btn-download-selected:hover { background:#0070d0; }
-      .pp-selector-preview { position:fixed;display:none;pointer-events:none;z-index:2147483650;border-radius:8px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,0.6);background:#111114; }
-      .pp-selector-preview.visible { display:block; }
-      .pp-selector-preview img { display:block;max-width:60vw;max-height:70vh;object-fit:contain; }
     `;
     shadow.appendChild(style);
-
-    // Hover preview element
-    const preview = document.createElement('div');
-    preview.className = 'pp-selector-preview';
-    const previewImg = document.createElement('img');
-    preview.appendChild(previewImg);
-    shadow.appendChild(preview);
-
-    let previewTimer = null;
-    let currentPreviewSrc = null;
-
-    function showPreview(imgSrc, rect) {
-      if (imgSrc === currentPreviewSrc && preview.classList.contains('visible')) return;
-      currentPreviewSrc = imgSrc;
-      // Use original URL for preview if available
-      const originalUrl = imgSrc.replace(/\/\d+x\d+\//, '/').replace(/_master\d+/, '');
-      previewImg.src = originalUrl;
-      preview.style.top = Math.max(16, rect.top - 20) + 'px';
-      preview.style.left = (rect.right + 16) + 'px';
-      preview.classList.add('visible');
-    }
-
-    function hidePreview() {
-      preview.classList.remove('visible');
-      currentPreviewSrc = null;
-    }
 
     const container = document.createElement('div');
     container.id = 'pp-selector-container';
