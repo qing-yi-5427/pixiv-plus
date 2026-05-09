@@ -247,7 +247,8 @@
       let blob = await fetch(resp.dataUrl).then(r => r.blob());
 
       // Inject tags into image metadata
-      if (tags && tags.length > 0) {
+      const embedTags = await new Promise(r => chrome.storage.local.get({ embedTags: true }, s => r(s.embedTags)));
+      if (embedTags && tags && tags.length > 0) {
         blob = await injectTags(blob, tags);
       }
 

@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const hoverToggle = document.getElementById('hover-preview');
   const delayField = document.getElementById('delay-field');
   const delayInput = document.getElementById('hover-delay');
+  const embedTagsToggle = document.getElementById('embed-tags');
   const dirPath = document.getElementById('dir-path');
   const resetDirBtn = document.getElementById('btn-reset-dir');
   const templateInput = document.getElementById('filename-template');
@@ -12,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.runtime.sendMessage({ type: 'getSettings' }, (settings) => {
     hoverToggle.checked = settings.hoverPreview !== false;
     delayInput.value = settings.hoverDelay || 400;
+    embedTagsToggle.checked = settings.embedTags !== false;
     templateInput.value = settings.filenameTemplate || '{artist}-{title}-{id}';
     updateDelayVisibility();
     updatePreview();
@@ -39,6 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   delayInput.addEventListener('change', saveSettings);
 
+  embedTagsToggle.addEventListener('change', saveSettings);
+
   templateInput.addEventListener('input', () => {
     updatePreview();
   });
@@ -59,6 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
       type: 'saveSettings',
       hoverPreview: hoverToggle.checked,
       hoverDelay: parseInt(delayInput.value) || 400,
+      embedTags: embedTagsToggle.checked,
       filenameTemplate: templateInput.value.trim() || '{artist}-{title}-{id}'
     });
     showStatus('Saved!', 'success');

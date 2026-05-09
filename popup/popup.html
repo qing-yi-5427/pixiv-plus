@@ -35,6 +35,17 @@
     <hr>
 
     <div class="field">
+      <label class="toggle-label">
+        <span>Embed Tags in Image</span>
+        <input type="checkbox" id="embed-tags" checked>
+        <span class="toggle-switch"></span>
+      </label>
+      <small>Write Pixiv tags into downloaded image metadata (PNG/XMP, JPEG/XMP)</small>
+    </div>
+
+    <hr>
+
+    <div class="field">
       <label for="filename-template">Filename Template</label>
       <input type="text" id="filename-template" value="{artist}-{title}-{id}">
       <small>Available: <code>{artist}</code> <code>{title}</code> <code>{id}</code> <code>{page}</code></small>
