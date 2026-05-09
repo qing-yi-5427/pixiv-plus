@@ -83,8 +83,7 @@
       .pp-overlay {
         position: fixed; top:0; left:0; right:0; bottom:0;
         display: none; align-items: center; justify-content: center;
-        background: rgba(0,0,0,0.7);
-        backdrop-filter: blur(4px);
+        background: rgba(0,0,0,0.75);
         animation: pp-in 0.2s cubic-bezier(0.16,1,0.3,1);
       }
       .pp-overlay.visible { display: flex; pointer-events: auto; }

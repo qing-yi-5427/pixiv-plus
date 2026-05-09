@@ -11,7 +11,7 @@
   function init() {
     panelHost = document.createElement('div');
     panelHost.id = 'pp-panel-host';
-    panelHost.style.cssText = 'position:fixed;bottom:0;right:0;width:100%;height:100%;pointer-events:none;z-index:2147483645;';
+    panelHost.style.cssText = 'position:fixed;bottom:0;right:0;width:100%;height:100%;pointer-events:none;z-index:2147483647;';
     const shadow = panelHost.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');
