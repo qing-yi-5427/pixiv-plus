@@ -146,6 +146,7 @@
         window.PixivPlusDownloadPanel.showToast('Ugoira not supported', 'warning');
         return;
       }
+      if (info.pageCount === 1) {
         const url = info.pageUrls[0]?.original;
         if (!url) throw new Error('No URL');
         const filename = window.PixivPlusAPI.generateFilename(info, 0);
