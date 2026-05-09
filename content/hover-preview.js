@@ -25,12 +25,14 @@
 
   // Drag state
   let dragging = false;
+  let dragMoved = false;
   let dragStartX = 0;
   let dragStartY = 0;
   let panX = 0;
   let panY = 0;
   let panStartX = 0;
   let panStartY = 0;
+  let lastClickTime = 0;
 
   let enabled = true;
   let delay = 400;
@@ -379,6 +381,7 @@
       if (!zoomed) return;
       e.preventDefault();
       dragging = true;
+      dragMoved = false;
       dragStartX = e.clientX;
       dragStartY = e.clientY;
       panStartX = panX;
@@ -390,6 +393,7 @@
       if (!dragging) return;
       const dx = e.clientX - dragStartX;
       const dy = e.clientY - dragStartY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
       panX = panStartX + dx;
       panY = panStartY + dy;
       clampAndApplyPan();
@@ -403,7 +407,19 @@
     });
 
     imgEl.addEventListener('click', (e) => {
-      if (zoomed) return;
+      if (dragMoved) return;
+      const now = Date.now();
+      if (zoomed) {
+        // Double-click to zoom out
+        if (now - lastClickTime < 350) {
+          exitZoom();
+          lastClickTime = 0;
+        } else {
+          lastClickTime = now;
+        }
+        return;
+      }
+      // Not zoomed: single click to zoom in
       const w = shadow.getElementById('pp-img-wrap');
       const m = shadow.querySelector('.pp-main');
       zoomed = true;
@@ -437,6 +453,17 @@
     btnNext.addEventListener('click', () => goToPage(currentPage + 1));
 
     document.body.appendChild(host);
+  }
+
+  function exitZoom() {
+    const w = host?.shadowRoot?.getElementById('pp-img-wrap');
+    const m = host?.shadowRoot?.querySelector('.pp-main');
+    zoomed = false;
+    panX = 0;
+    panY = 0;
+    imgEl.style.transform = '';
+    if (w) w.classList.remove('zoomed', 'dragging');
+    if (m) m.classList.remove('zoomed');
   }
 
   function applyPan() {
