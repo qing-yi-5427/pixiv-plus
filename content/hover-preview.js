@@ -28,7 +28,8 @@
   let currentTriggerEl = null;
   let showTimer = null;
   let pendingWorkId = null;
-  let zoomed = false;
+  let zoomLevel = 1;
+  let zoomBadge = null;
 
   // Drag state
   let dragging = false;
@@ -121,9 +122,6 @@
         position: relative;
         overflow: hidden;
       }
-      .pp-main.zoomed {
-        padding: 0;
-      }
       .pp-main.zoomed .pp-info {
         display: none;
       }
@@ -140,19 +138,7 @@
         border-radius: 8px;
         background: #111114;
       }
-      .pp-img-wrap.zoomed {
-        max-width: none;
-        max-height: none;
-        width: 100%;
-        height: 90vh;
-        flex: 1;
-        overflow: hidden;
-        cursor: grab;
-        align-items: flex-start;
-        justify-content: flex-start;
-        border-radius: 0;
-      }
-      .pp-img-wrap.zoomed.dragging {
+      .pp-img-wrap.panning {
         cursor: grabbing;
       }
       .pp-img {
@@ -163,16 +149,26 @@
         transition: none;
         user-select: none;
         -webkit-user-drag: none;
-      }
-      .pp-img-wrap.zoomed .pp-img {
-        max-width: none;
-        max-height: none;
-        min-width: 100%;
-        min-height: 100%;
-        object-fit: none;
-        transform-origin: 0 0;
+        transform-origin: center center;
+        will-change: transform;
       }
       .pp-img.hidden { display: none; }
+
+      .pp-zoom-badge {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        background: rgba(0,0,0,0.7);
+        color: #8A8F98;
+        font-size: 11px;
+        padding: 2px 8px;
+        border-radius: 4px;
+        pointer-events: none;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        display: none;
+        z-index: 5;
+      }
+      .pp-zoom-badge.visible { display: block; }
 
       .pp-spinner { position: absolute; }
       .pp-spinner.hidden { display: none; }
@@ -247,6 +243,17 @@
         pointer-events: none;
       }
       .pp-sidebar-btn.pp-follow-active {
+        color: #5E6AD2;
+        cursor: default;
+      }
+      .pp-sidebar-btn.pp-follow-btn {
+        cursor: default;
+      }
+      .pp-sidebar-btn.pp-follow-btn:hover {
+        background: transparent;
+        color: inherit;
+      }
+      .pp-sidebar-btn.pp-follow-btn.pp-follow-active:hover {
         color: #5E6AD2;
       }
 
@@ -406,6 +413,10 @@
     wrap.appendChild(spinnerEl);
     wrap.appendChild(errorEl);
 
+    zoomBadge = document.createElement('div');
+    zoomBadge.className = 'pp-zoom-badge';
+    wrap.appendChild(zoomBadge);
+
     infoEl = document.createElement('div');
     infoEl.className = 'pp-info';
 
@@ -430,9 +441,9 @@
     btnAvatar.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
 
     btnFollow = document.createElement('button');
-    btnFollow.className = 'pp-sidebar-btn';
+    btnFollow.className = 'pp-sidebar-btn pp-follow-btn';
     btnFollow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>';
-    btnFollow.title = 'Follow artist';
+    btnFollow.title = 'Not following';
 
     labelFollow = document.createElement('div');
     labelFollow.className = 'pp-sidebar-label';
@@ -514,7 +525,7 @@
 
     const hint = document.createElement('div');
     hint.className = 'pp-hint';
-    hint.textContent = 'Click image to zoom · Drag to pan · ← → navigate · Esc to close';
+    hint.textContent = 'Scroll to zoom · Drag to pan · ← → navigate · D download · Esc to close';
 
     overlay.appendChild(panel);
     overlay.appendChild(hint);
@@ -528,9 +539,33 @@
       }
     });
 
-    // Zoom toggle on click (only without drag)
+    // Zoom: scroll wheel for continuous zoom, click for quick 2x toggle
+    wrap.addEventListener('wheel', (e) => {
+      if (!currentWorkId || !imgEl.naturalWidth) return;
+      e.preventDefault();
+      const rect = wrap.getBoundingClientRect();
+      const cx = e.clientX - rect.left - rect.width / 2;
+      const cy = e.clientY - rect.top - rect.height / 2;
+
+      const factor = e.deltaY > 0 ? 0.88 : 1.14;
+      const newZoom = Math.max(1, Math.min(8, zoomLevel * factor));
+
+      if (newZoom === zoomLevel) return;
+      if (Math.abs(newZoom - 1) < 0.05) { resetZoom(); return; }
+
+      const ratio = newZoom / zoomLevel;
+      panX = cx - ratio * (cx - panX);
+      panY = cy - ratio * (cy - panY);
+
+      zoomLevel = newZoom;
+      clampPan();
+      enterZoomMode();
+      applyZoomPan();
+    }, { passive: false });
+
+    // Drag to pan when zoomed
     wrap.addEventListener('mousedown', (e) => {
-      if (!zoomed) return;
+      if (zoomLevel <= 1) return;
       e.preventDefault();
       dragging = true;
       dragMoved = false;
@@ -538,7 +573,7 @@
       dragStartY = e.clientY;
       panStartX = panX;
       panStartY = panY;
-      wrap.classList.add('dragging');
+      wrap.classList.add('panning');
     });
 
     document.addEventListener('mousemove', (e) => {
@@ -548,36 +583,33 @@
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
       panX = panStartX + dx;
       panY = panStartY + dy;
-      clampAndApplyPan();
+      clampPan();
+      applyZoomPan();
     });
 
     document.addEventListener('mouseup', () => {
       if (!dragging) return;
       dragging = false;
-      const w = host?.shadowRoot?.getElementById('pp-img-wrap');
-      if (w) w.classList.remove('dragging');
+      wrap.classList.remove('panning');
     });
 
     imgEl.addEventListener('click', (e) => {
       if (dragMoved) return;
       const now = Date.now();
-      if (zoomed) {
+      if (zoomLevel > 1) {
         if (now - lastClickTime < 350) {
-          exitZoom();
+          resetZoom();
           lastClickTime = 0;
         } else {
           lastClickTime = now;
         }
         return;
       }
-      const w = shadow.getElementById('pp-img-wrap');
-      const m = shadow.querySelector('.pp-main');
-      zoomed = true;
+      zoomLevel = 2;
       panX = 0;
       panY = 0;
-      applyPan();
-      w.classList.add('zoomed');
-      m.classList.add('zoomed');
+      enterZoomMode();
+      applyZoomPan();
     });
 
     btnClose.addEventListener('click', () => hide());
@@ -586,10 +618,6 @@
       if (currentInfo?.userId) {
         window.open(`https://www.pixiv.net/users/${currentInfo.userId}`, '_blank');
       }
-    });
-
-    btnFollow.addEventListener('click', async () => {
-      if (!currentInfo?.userId) return;
     });
 
     btnDownload.addEventListener('click', () => {
@@ -632,12 +660,12 @@
     if (isFollowed) {
       btnFollow.classList.add('pp-follow-active');
       btnFollow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><polyline points="16 11 18 13 22 9"/></svg>';
-      btnFollow.title = 'Unfollow artist';
+      btnFollow.title = 'Following';
       if (labelFollow) labelFollow.textContent = 'Following';
     } else {
       btnFollow.classList.remove('pp-follow-active');
       btnFollow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>';
-      btnFollow.title = 'Follow artist';
+      btnFollow.title = 'Not following';
       if (labelFollow) labelFollow.textContent = 'Follow';
     }
   }
@@ -687,37 +715,52 @@
     tagsPanel.classList.add('visible');
   }
 
-  function exitZoom() {
-    const w = host?.shadowRoot?.getElementById('pp-img-wrap');
+  function enterZoomMode() {
     const m = host?.shadowRoot?.querySelector('.pp-main');
-    zoomed = false;
+    if (m) m.classList.add('zoomed');
+    if (zoomBadge) {
+      zoomBadge.textContent = `${Math.round(zoomLevel * 100)}%`;
+      zoomBadge.classList.add('visible');
+    }
+  }
+
+  function resetZoom() {
+    zoomLevel = 1;
     panX = 0;
     panY = 0;
     imgEl.style.transform = '';
-    if (w) w.classList.remove('zoomed', 'dragging');
+    const m = host?.shadowRoot?.querySelector('.pp-main');
     if (m) m.classList.remove('zoomed');
+    if (zoomBadge) zoomBadge.classList.remove('visible');
   }
 
-  function applyPan() {
+  function applyZoomPan() {
     if (!imgEl) return;
-    imgEl.style.transform = `translate(${panX}px, ${panY}px)`;
+    imgEl.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+    if (zoomBadge && zoomLevel > 1) {
+      zoomBadge.textContent = `${Math.round(zoomLevel * 100)}%`;
+    }
   }
 
-  function clampAndApplyPan() {
+  function clampPan() {
     const wrap = host?.shadowRoot?.getElementById('pp-img-wrap');
     if (!wrap || !imgEl) return;
 
-    const wrapRect = wrap.getBoundingClientRect();
-    const imgW = imgEl.naturalWidth;
-    const imgH = imgEl.naturalHeight;
+    const ww = wrap.clientWidth;
+    const wh = wrap.clientHeight;
+    const iw = imgEl.naturalWidth;
+    const ih = imgEl.naturalHeight;
+    if (!iw || !ih) return;
 
-    const maxPanX = Math.max(0, (imgW - wrapRect.width) / 2);
-    const maxPanY = Math.max(0, (imgH - wrapRect.height) / 2);
+    const fitScale = Math.min(ww / iw, wh / ih);
+    const scaledW = iw * fitScale * zoomLevel;
+    const scaledH = ih * fitScale * zoomLevel;
+
+    const maxPanX = Math.max(0, (scaledW - ww) / 2);
+    const maxPanY = Math.max(0, (scaledH - wh) / 2);
 
     panX = Math.max(-maxPanX, Math.min(maxPanX, panX));
     panY = Math.max(-maxPanY, Math.min(maxPanY, panY));
-
-    applyPan();
   }
 
   function updatePageUI() {
@@ -787,10 +830,9 @@
     const url = currentInfo.pageUrls[page]?.original;
     if (!url) return;
 
-    if (zoomed) {
+    if (zoomLevel > 1) {
       panX = 0;
       panY = 0;
-      applyPan();
     }
 
     imgEl.classList.add('hidden');
@@ -800,6 +842,9 @@
     imgEl.onload = () => {
       spinnerEl.classList.add('hidden');
       imgEl.classList.remove('hidden');
+      if (currentInfo) {
+        infoEl.textContent = `${currentInfo.artist} — ${currentInfo.title} · ${imgEl.naturalWidth}×${imgEl.naturalHeight}`;
+      }
     };
     imgEl.onerror = () => {
       spinnerEl.classList.add('hidden');
@@ -838,17 +883,15 @@
   async function show(workId) {
     currentWorkId = workId;
     currentPage = 0;
-    zoomed = false;
+    zoomLevel = 1;
     panX = 0;
     panY = 0;
     ensureUI();
 
-    const w = host.shadowRoot.getElementById('pp-img-wrap');
     const m = host.shadowRoot.querySelector('.pp-main');
-    w.classList.remove('zoomed');
-    w.classList.remove('dragging');
     if (m) m.classList.remove('zoomed');
-    applyPan();
+    if (zoomBadge) zoomBadge.classList.remove('visible');
+    imgEl.style.transform = '';
 
     imgEl.classList.add('hidden');
     errorEl.classList.add('hidden');
@@ -911,6 +954,7 @@
         if (currentWorkId !== workId) return;
         spinnerEl.classList.add('hidden');
         imgEl.classList.remove('hidden');
+        infoEl.textContent = `${info.artist} — ${info.title} · ${imgEl.naturalWidth}×${imgEl.naturalHeight}`;
       };
       imgEl.onerror = () => {
         if (currentWorkId !== workId) return;
@@ -949,7 +993,7 @@
     currentInfo = null;
     currentUserInfo = null;
     currentPage = 0;
-    zoomed = false;
+    zoomLevel = 1;
     panX = 0;
     panY = 0;
     dragging = false;
@@ -961,6 +1005,9 @@
       imgEl.onerror = null;
       imgEl.style.transform = '';
     }
+    const m = host?.shadowRoot?.querySelector('.pp-main');
+    if (m) m.classList.remove('zoomed');
+    if (zoomBadge) zoomBadge.classList.remove('visible');
   }
 
   function extractWorkId(el) {
@@ -978,6 +1025,12 @@
     if (e.key === 'Escape' && currentWorkId) hide();
     if (e.key === 'ArrowLeft' && currentWorkId) navigate(-1);
     if (e.key === 'ArrowRight' && currentWorkId) navigate(1);
+    if (e.key === 'd' && currentWorkId && currentInfo && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const url = currentInfo.pageUrls[currentPage]?.original;
+      if (!url) return;
+      const filename = window.PixivPlusAPI.generateFilename(currentInfo, currentPage);
+      window.PixivPlusDownload.downloadFile(url, filename, currentInfo.tags);
+    }
   });
 
   window.PixivPlusHover = { requestShow, cancelOrHide, extractWorkId };

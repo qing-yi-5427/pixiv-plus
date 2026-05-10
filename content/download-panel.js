@@ -161,8 +161,8 @@
       /* Toast */
       .pp-toast {
         position: fixed;
-        bottom: 430px;
-        right: 20px;
+        bottom: 20px;
+        right: 380px;
         padding: 10px 16px;
         border-radius: 10px;
         font-size: 13px;
@@ -351,6 +351,11 @@
     toast.className = `pp-toast ${type || 'info'}`;
     toast.textContent = message;
     shadow.appendChild(toast);
+
+    // Stack toasts: each new toast goes above existing ones
+    const existingToasts = shadow.querySelectorAll('.pp-toast.visible');
+    const offset = existingToasts.length * 52;
+    toast.style.bottom = (20 + offset) + 'px';
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
