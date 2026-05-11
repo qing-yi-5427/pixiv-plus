@@ -625,7 +625,11 @@
         const url = currentInfo.pageUrls[currentPage]?.original;
         if (!url) return;
         const filename = window.PixivPlusAPI.generateFilename(currentInfo, currentPage);
-        window.PixivPlusDownload.downloadFile(url, filename, currentInfo.tags);
+        window.PixivPlusDownload.downloadFile(url, filename, currentInfo.tags, {
+          thumbUrl: currentInfo.urls.small || currentInfo.urls.regular || '',
+          title: currentInfo.title,
+          artist: currentInfo.artist
+        });
       }
     });
 
@@ -1029,7 +1033,11 @@
       const url = currentInfo.pageUrls[currentPage]?.original;
       if (!url) return;
       const filename = window.PixivPlusAPI.generateFilename(currentInfo, currentPage);
-      window.PixivPlusDownload.downloadFile(url, filename, currentInfo.tags);
+      window.PixivPlusDownload.downloadFile(url, filename, currentInfo.tags, {
+        thumbUrl: currentInfo.urls.small || currentInfo.urls.regular || '',
+        title: currentInfo.title,
+        artist: currentInfo.artist
+      });
     }
   });
 

@@ -212,8 +212,11 @@
 
   // --- Download logic ---
 
-  async function downloadFile(url, filename, tags) {
+  async function downloadFile(url, filename, tags, meta) {
     const panel = window.PixivPlusDownloadPanel;
+    if (panel?.isDuplicate(filename)) {
+      panel.showToast(`Already downloaded: ${meta?.title || filename}`, 'warning');
+    }
     const ac = new AbortController();
     activeFetches.set(url, filename);
     abortControllers.set(url, ac);
@@ -224,7 +227,10 @@
       bytesReceived: 0,
       totalBytes: 0,
       speed: 'Connecting...',
-      url
+      url,
+      thumbUrl: meta?.thumbUrl || '',
+      title: meta?.title || '',
+      artist: meta?.artist || ''
     });
 
     try {
@@ -288,7 +294,11 @@
         const url = info.pageUrls[0]?.original;
         if (!url) throw new Error('No URL');
         const filename = window.PixivPlusAPI.generateFilename(info, 0);
-        downloadFile(url, filename, info.tags);
+        downloadFile(url, filename, info.tags, {
+          thumbUrl: info.urls.small || info.urls.regular || '',
+          title: info.title,
+          artist: info.artist
+        });
       } else {
         showMultiImageSelector(info);
       }
@@ -433,7 +443,11 @@
       for (const idx of selected) {
         const url = info.pageUrls[idx].original;
         const filename = window.PixivPlusAPI.generateFilename(info, idx);
-        downloadFile(url, filename, info.tags);
+        downloadFile(url, filename, info.tags, {
+          thumbUrl: info.urls.small || info.urls.regular || '',
+          title: info.title,
+          artist: info.artist
+        });
       }
       container.classList.remove('visible');
     };
