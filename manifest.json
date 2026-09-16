@@ -1,10 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "PixivPlus",
-  "version": "1.1.0",
-  "description": "Hover preview, one-click download, and download manager for Pixiv",
+  "name": "__MSG_appName__",
+  "version": "2.0.0",
+  "description": "__MSG_appDescription__",
+  "short_name": "PixivPlus",
   "default_locale": "en",
+  "minimum_chrome_version": "105",
   "author": "qing-yi-5427",
+  "homepage_url": "https://github.com/qing-yi-5427/pixiv-plus",
   "permissions": [
     "storage",
     "declarativeNetRequest"
@@ -15,6 +18,9 @@
   ],
   "background": {
     "service_worker": "background/service-worker.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'self'"
   },
   "content_scripts": [
     {
@@ -31,6 +37,7 @@
     }
   ],
   "action": {
+    "default_title": "PixivPlus Settings",
     "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon16.png",

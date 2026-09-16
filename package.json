@@ -1,0 +1,11 @@
+{
+  "name": "pixiv-plus",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "validate": "node scripts/validate.mjs",
+    "build": "node scripts/build.mjs",
+    "release:check": "npm test && npm run validate && npm run build"
+  }
+}

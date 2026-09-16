@@ -24,6 +24,28 @@
   background: rgba(94, 106, 210, 0.8);
 }
 
+.pp-download-btn[data-state="queued"]::after,
+.pp-download-btn[data-state="complete"]::after,
+.pp-download-btn[data-state="error"]::after {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.pp-download-btn[data-state="queued"] svg,
+.pp-download-btn[data-state="complete"] svg,
+.pp-download-btn[data-state="error"] svg { display: none; }
+.pp-download-btn[data-state="queued"]::after { content: '…'; }
+.pp-download-btn[data-state="complete"]::after { content: '✓'; color: #9be9a8; }
+.pp-download-btn[data-state="error"]::after { content: '↻'; color: #ff8f8f; }
+.pp-download-btn[data-state="downloading"] {
+  opacity: 1;
+  background: conic-gradient(#7c88ff var(--pp-progress, 0deg), rgba(0,0,0,.72) 0);
+}
+.pp-download-btn[data-state="queued"],
+.pp-download-btn[data-state="complete"],
+.pp-download-btn[data-state="error"] { opacity: 1; }
+
 /* Show download button on card hover */
 li:hover > .pp-download-btn,
 section:hover > .pp-download-btn,

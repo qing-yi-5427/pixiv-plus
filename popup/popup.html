@@ -3,58 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PixivPlus Settings</title>
+  <title>PixivPlus</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <h1>PixivPlus</h1>
+  <main class="container">
+    <header class="app-header">
+      <div>
+        <h1>PixivPlus</h1>
+        <p data-i18n="settingsSubtitle">Browse faster. Save originals reliably.</p>
+      </div>
+      <span class="version">2.0</span>
+    </header>
 
-    <div class="field">
-      <label>Download Directory</label>
-      <div class="dir-path" id="dir-path">Checking...</div>
-      <button id="btn-reset-dir" class="dir-btn">Reset Directory</button>
-      <small>Directory is selected on first download.</small>
-    </div>
-
-    <hr>
-
-    <div class="field">
+    <section class="settings-section">
+      <h2 data-i18n="browseSection">Browsing</h2>
       <label class="toggle-label">
-        <span>Hover Preview</span>
+        <span data-i18n="hoverPreview">Hover preview</span>
         <input type="checkbox" id="hover-preview" checked>
         <span class="toggle-switch"></span>
       </label>
-    </div>
+      <div class="field" id="delay-field">
+        <label for="hover-delay" data-i18n="previewDelay">Preview delay (ms)</label>
+        <input type="number" id="hover-delay" value="400" min="0" max="3000" step="50">
+      </div>
+      <div class="field">
+        <label for="preview-behavior" data-i18n="previewBehavior">Hover behavior</label>
+        <select id="preview-behavior">
+          <option value="peek" data-i18n="previewPeek">Side preview, click to expand</option>
+          <option value="immersive" data-i18n="previewImmersive">Open immersive viewer</option>
+        </select>
+      </div>
+    </section>
 
-    <div class="field" id="delay-field">
-      <label for="hover-delay">Preview Delay (ms)</label>
-      <input type="number" id="hover-delay" value="400" min="0" max="3000" step="50">
-    </div>
+    <section class="settings-section">
+      <h2 data-i18n="downloadSection">Downloads</h2>
+      <div class="field">
+        <label data-i18n="downloadDirectory">Download folder</label>
+        <div class="dir-path" id="dir-path">Checking...</div>
+        <button id="btn-reset-dir" class="secondary-btn" data-i18n="resetDirectory">Reset folder</button>
+        <small data-i18n="directoryHint">Choose a folder from the download panel or on first download.</small>
+      </div>
+      <div class="field two-column">
+        <div>
+          <label for="download-concurrency" data-i18n="concurrency">Concurrent downloads</label>
+          <select id="download-concurrency">
+            <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+            <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+          </select>
+        </div>
+        <div>
+          <label for="duplicate-policy" data-i18n="duplicatePolicy">Existing files</label>
+          <select id="duplicate-policy">
+            <option value="skip" data-i18n="duplicateSkip">Skip</option>
+            <option value="rename" data-i18n="duplicateRename">Auto rename</option>
+            <option value="overwrite" data-i18n="duplicateOverwrite">Overwrite</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="multi-download-default" data-i18n="multiPageBehavior">Multi-page click</label>
+        <select id="multi-download-default">
+          <option value="ask" data-i18n="multiAsk">Ask which pages</option>
+          <option value="all" data-i18n="multiAll">Download all pages</option>
+        </select>
+      </div>
+    </section>
 
-    <hr>
-
-    <div class="field">
+    <section class="settings-section">
+      <h2 data-i18n="fileSection">File and metadata</h2>
       <label class="toggle-label">
-        <span>Embed Tags in Image</span>
+        <span data-i18n="embedTags">Embed Pixiv tags</span>
         <input type="checkbox" id="embed-tags" checked>
         <span class="toggle-switch"></span>
       </label>
-      <small>Write Pixiv tags into downloaded image metadata (PNG/XMP, JPEG/XMP)</small>
-    </div>
+      <div class="field">
+        <label for="filename-template" data-i18n="filenameTemplate">Filename template</label>
+        <input type="text" id="filename-template" value="{artist}-{title}-{id}">
+        <small><span data-i18n="availableTokens">Available</span>: <code>{artist}</code> <code>{title}</code> <code>{id}</code> <code>{page}</code></small>
+        <div class="naming-preview" id="filename-preview">Artist-Title-12345678.png</div>
+      </div>
+    </section>
 
-    <hr>
-
-    <div class="field">
-      <label for="filename-template">Filename Template</label>
-      <input type="text" id="filename-template" value="{artist}-{title}-{id}">
-      <small>Available: <code>{artist}</code> <code>{title}</code> <code>{id}</code> <code>{page}</code></small>
-      <div class="naming-preview" id="filename-preview">Artist-Title-12345678.png</div>
-    </div>
-
-    <div class="status" id="status"></div>
-  </div>
-
+    <div class="status" id="status" aria-live="polite"></div>
+  </main>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -27,9 +27,16 @@
   let currentPage = 0;
   let currentTriggerEl = null;
   let showTimer = null;
+  let errorHideTimer = null;
   let pendingWorkId = null;
   let zoomLevel = 1;
   let zoomBadge = null;
+  let shortcutHelp = null;
+  let hintEl = null;
+  let isImmersive = false;
+  let hideTimer = null;
+  let hintTimer = null;
+  let previousFocus = null;
 
   // Drag state
   let dragging = false;
@@ -44,14 +51,17 @@
 
   let enabled = true;
   let delay = 400;
+  let previewBehavior = 'peek';
 
-  chrome.storage.local.get({ hoverPreview: true, hoverDelay: 400 }, (s) => {
+  chrome.storage.local.get({ hoverPreview: true, hoverDelay: 400, previewBehavior: 'peek' }, (s) => {
     enabled = s.hoverPreview;
     delay = s.hoverDelay;
+    previewBehavior = s.previewBehavior || 'peek';
   });
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.hoverPreview !== undefined) enabled = changes.hoverPreview.newValue;
     if (changes.hoverDelay !== undefined) delay = changes.hoverDelay.newValue;
+    if (changes.previewBehavior !== undefined) previewBehavior = changes.previewBehavior.newValue;
   });
 
   function getWorkList() {
@@ -87,12 +97,16 @@
     style.textContent = `
       .pp-overlay {
         position: fixed; top:0; left:0; right:0; bottom:0;
-        display: none; align-items: center; justify-content: center;
-        background: rgba(0,0,0,0.7);
-        backdrop-filter: blur(4px);
+        display: none; align-items: center; justify-content: flex-end;
+        padding:20px;
+        background: transparent;
         animation: pp-in 0.2s cubic-bezier(0.16,1,0.3,1);
       }
-      .pp-overlay.visible { display: flex; pointer-events: auto; }
+      .pp-overlay.visible { display: flex; pointer-events: none; }
+      .pp-overlay.immersive {
+        justify-content:center;padding:0;pointer-events:auto;
+        background:rgba(0,0,0,0.7);backdrop-filter:blur(4px);
+      }
       @keyframes pp-in { from { opacity:0; } to { opacity:1; } }
 
       .pp-panel {
@@ -105,7 +119,14 @@
         max-width: 92vw;
         max-height: 90vh;
         animation: pp-panel-in 0.25s cubic-bezier(0.16,1,0.3,1);
+        pointer-events:auto;
       }
+      .pp-overlay:not(.immersive) .pp-panel {
+        width:min(760px,52vw);max-width:52vw;max-height:78vh;
+      }
+      .pp-overlay:not(.immersive) .pp-img,
+      .pp-overlay:not(.immersive) .pp-img-wrap { max-height:calc(74vh - 60px); }
+      .pp-overlay:not(.immersive) .pp-close-btn { display:none; }
       @keyframes pp-panel-in {
         from { opacity:0; transform: scale(0.95) translateY(8px); }
         to { opacity:1; transform: scale(1) translateY(0); }
@@ -169,6 +190,23 @@
         z-index: 5;
       }
       .pp-zoom-badge.visible { display: block; }
+
+      .pp-shortcuts {
+        position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+        width:min(440px,86vw);padding:20px;background:#0a0a0c;
+        border:1px solid rgba(255,255,255,.1);border-radius:16px;
+        box-shadow:0 24px 80px rgba(0,0,0,.65);color:#EDEDEF;
+        display:none;pointer-events:auto;z-index:20;
+      }
+      .pp-shortcuts.visible { display:block; }
+      .pp-shortcuts h3 { margin:0 0 14px;font-size:15px; }
+      .pp-shortcut-grid { display:grid;grid-template-columns:auto 1fr;gap:9px 14px;font-size:12px;color:#8A8F98; }
+      .pp-shortcut-grid kbd { color:#EDEDEF;background:#18181c;border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:2px 6px;text-align:center; }
+      .pp-hint.hidden { display:none; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .pp-overlay,.pp-panel,.pp-spin { animation:none !important;transition:none !important; }
+      }
 
       .pp-spinner { position: absolute; }
       .pp-spinner.hidden { display: none; }
@@ -390,6 +428,9 @@
 
     const panel = document.createElement('div');
     panel.className = 'pp-panel';
+    panel.tabIndex = -1;
+    panel.setAttribute('role', 'dialog');
+    panel.setAttribute('aria-label', 'PixivPlus image viewer');
 
     // Main area
     const main = document.createElement('div');
@@ -499,6 +540,10 @@
     btnTags.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>';
     btnTags.title = 'Tags';
 
+    [btnClose, btnAvatar, btnFollow, btnDownload, btnBookmark, btnTags, btnPrev, btnNext].forEach(button => {
+      button.setAttribute('aria-label', button.title || 'Viewer action');
+    });
+
     const labelTags = document.createElement('div');
     labelTags.className = 'pp-sidebar-label';
     labelTags.textContent = 'Tags';
@@ -523,20 +568,40 @@
     tagsPanel.className = 'pp-tags-panel';
     overlay.appendChild(tagsPanel);
 
-    const hint = document.createElement('div');
-    hint.className = 'pp-hint';
-    hint.textContent = 'Scroll to zoom · Drag to pan · ← → navigate · D download · Esc to close';
+    hintEl = document.createElement('div');
+    hintEl.className = 'pp-hint';
+    hintEl.textContent = 'Click image or Space to expand · Press ? for shortcuts';
+
+    shortcutHelp = document.createElement('div');
+    shortcutHelp.className = 'pp-shortcuts';
+    shortcutHelp.innerHTML = `
+      <h3>Keyboard shortcuts</h3>
+      <div class="pp-shortcut-grid">
+        <kbd>Space</kbd><span>Open immersive viewer</span>
+        <kbd>← / →</kbd><span>Previous / next page</span>
+        <kbd>J / K</kbd><span>Previous / next artwork</span>
+        <kbd>D</kbd><span>Download current page</span>
+        <kbd>Shift + D</kbd><span>Download every page</span>
+        <kbd>B</kbd><span>Bookmark current artwork</span>
+        <kbd>Enter</kbd><span>Open artwork page</span>
+        <kbd>?</kbd><span>Toggle this help</span>
+      </div>`;
 
     overlay.appendChild(panel);
-    overlay.appendChild(hint);
+    overlay.appendChild(hintEl);
+    overlay.appendChild(shortcutHelp);
     shadow.appendChild(overlay);
 
     // --- Events ---
 
     overlay.addEventListener('click', (e) => {
-      if (e.target === overlay) {
+      if (e.target === overlay && isImmersive) {
         hide();
       }
+    });
+    panel.addEventListener('mouseenter', cancelHide);
+    panel.addEventListener('mouseleave', () => {
+      if (!isImmersive) scheduleHide();
     });
 
     // Zoom: scroll wheel for continuous zoom, click for quick 2x toggle
@@ -595,6 +660,10 @@
 
     imgEl.addEventListener('click', (e) => {
       if (dragMoved) return;
+      if (!isImmersive) {
+        enterImmersive(panel);
+        return;
+      }
       const now = Date.now();
       if (zoomLevel > 1) {
         if (now - lastClickTime < 350) {
@@ -622,27 +691,24 @@
 
     btnDownload.addEventListener('click', () => {
       if (currentWorkId && currentInfo) {
+        if (currentInfo.isUgoira) {
+          window.PixivPlusDownload.downloadAllWork(currentInfo);
+          return;
+        }
         const url = currentInfo.pageUrls[currentPage]?.original;
         if (!url) return;
         const filename = window.PixivPlusAPI.generateFilename(currentInfo, currentPage);
         window.PixivPlusDownload.downloadFile(url, filename, currentInfo.tags, {
           thumbUrl: currentInfo.urls.small || currentInfo.urls.regular || '',
           title: currentInfo.title,
-          artist: currentInfo.artist
+          artist: currentInfo.artist,
+          workId: currentInfo.id,
+          pageIndex: currentPage
         });
       }
     });
 
-    btnBookmark.addEventListener('click', () => {
-      if (!currentWorkId) return;
-      const btn = document.querySelector('button[data-click-label="bookmark"], button[aria-label*="bookmark" i], button[aria-label*="ブックマーク"]');
-      if (btn) {
-        btn.click();
-        window.PixivPlusDownloadPanel?.showToast('Bookmarked!', 'success');
-      } else {
-        window.open(`https://www.pixiv.net/bookmark_add.php?type=illust&illust_id=${currentWorkId}`, '_blank');
-      }
-    });
+    btnBookmark.addEventListener('click', bookmarkCurrent);
 
     btnPrev.addEventListener('click', () => navigate(-1));
 
@@ -671,6 +737,40 @@
       btnFollow.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>';
       btnFollow.title = 'Not following';
       if (labelFollow) labelFollow.textContent = 'Follow';
+    }
+  }
+
+  function cancelHide() {
+    clearTimeout(hideTimer);
+    hideTimer = null;
+  }
+
+  function scheduleHide() {
+    cancelHide();
+    hideTimer = setTimeout(() => {
+      if (!isImmersive) hide();
+    }, 450);
+  }
+
+  function enterImmersive(panel = host?.shadowRoot?.querySelector('.pp-panel')) {
+    if (!overlay || !currentWorkId) return;
+    cancelHide();
+    previousFocus = document.activeElement;
+    isImmersive = true;
+    overlay.classList.add('immersive');
+    panel?.setAttribute('aria-modal', 'true');
+    panel?.focus({ preventScroll: true });
+  }
+
+  function bookmarkCurrent() {
+    if (!currentWorkId) return;
+    const card = currentTriggerEl?.closest('li, section') || currentTriggerEl?.parentElement;
+    const btn = card?.querySelector('button[data-click-label="bookmark"], button[aria-label*="bookmark" i], button[aria-label*="ブックマーク"]');
+    if (btn) {
+      btn.click();
+      window.PixivPlusDownloadPanel?.showToast('Bookmarked!', 'success');
+    } else {
+      window.open(`https://www.pixiv.net/bookmark_add.php?type=illust&illust_id=${currentWorkId}`, '_blank');
     }
   }
 
@@ -732,6 +832,7 @@
     zoomLevel = 1;
     panX = 0;
     panY = 0;
+    dragMoved = false;
     imgEl.style.transform = '';
     const m = host?.shadowRoot?.querySelector('.pp-main');
     if (m) m.classList.remove('zoomed');
@@ -862,6 +963,7 @@
 
   function requestShow(thumbnailEl) {
     if (!enabled) return;
+    cancelHide();
     const workId = extractWorkId(thumbnailEl);
     if (!workId) return;
     if (workId === currentWorkId) return;
@@ -876,6 +978,7 @@
 
   function cancelOrHide() {
     cancelPending();
+    if (currentWorkId && !isImmersive) scheduleHide();
   }
 
   function cancelPending() {
@@ -885,12 +988,24 @@
   }
 
   async function show(workId) {
+    clearTimeout(errorHideTimer);
+    errorHideTimer = null;
     currentWorkId = workId;
+    currentInfo = null;
+    currentUserInfo = null;
     currentPage = 0;
     zoomLevel = 1;
     panX = 0;
     panY = 0;
+    dragMoved = false;
     ensureUI();
+    isImmersive = previewBehavior === 'immersive';
+    overlay.classList.toggle('immersive', isImmersive);
+    const panel = host.shadowRoot.querySelector('.pp-panel');
+    panel?.setAttribute('aria-modal', isImmersive ? 'true' : 'false');
+    hintEl?.classList.remove('hidden');
+    clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => hintEl?.classList.add('hidden'), 4500);
 
     const m = host.shadowRoot.querySelector('.pp-main');
     if (m) m.classList.remove('zoomed');
@@ -909,6 +1024,10 @@
     infoEl.textContent = '';
     spinnerEl.classList.remove('hidden');
     overlay.classList.add('visible');
+    if (isImmersive) {
+      previousFocus = document.activeElement;
+      panel?.focus({ preventScroll: true });
+    }
     if (tagsPanel) tagsPanel.classList.remove('visible');
 
     try {
@@ -917,15 +1036,12 @@
 
       currentInfo = info;
 
-      if (info.isUgoira) {
-        showError('Ugoira not supported');
-        return;
-      }
-
-      const url = info.pageUrls[0]?.original;
+      const url = info.isUgoira
+        ? (info.urls.regular || info.urls.small || info.pageUrls[0]?.regular)
+        : info.pageUrls[0]?.original;
       if (!url) throw new Error('No original URL');
 
-      infoEl.textContent = `${info.artist} — ${info.title}`;
+      infoEl.textContent = `${info.artist} — ${info.title}${info.isUgoira ? ' · Ugoira preview' : ''}`;
       btnDownload.classList.remove('hidden');
       btnBookmark.classList.remove('hidden');
       btnTags.classList.remove('hidden');
@@ -958,7 +1074,7 @@
         if (currentWorkId !== workId) return;
         spinnerEl.classList.add('hidden');
         imgEl.classList.remove('hidden');
-        infoEl.textContent = `${info.artist} — ${info.title} · ${imgEl.naturalWidth}×${imgEl.naturalHeight}`;
+      infoEl.textContent = `${info.artist} — ${info.title}${info.isUgoira ? ' · Ugoira' : ''} · ${imgEl.naturalWidth}×${imgEl.naturalHeight}`;
       };
       imgEl.onerror = () => {
         if (currentWorkId !== workId) return;
@@ -988,11 +1104,16 @@
     btnNext.classList.add('hidden');
     pageInfoEl.textContent = '';
     if (tagsPanel) tagsPanel.classList.remove('visible');
-    setTimeout(hide, 2000);
+    clearTimeout(errorHideTimer);
+    errorHideTimer = setTimeout(() => {
+      if (currentWorkId) hide();
+    }, 2000);
   }
 
   function hide() {
     cancelPending();
+    clearTimeout(errorHideTimer);
+    errorHideTimer = null;
     currentWorkId = null;
     currentInfo = null;
     currentUserInfo = null;
@@ -1001,9 +1122,11 @@
     panX = 0;
     panY = 0;
     dragging = false;
+    dragMoved = false;
     currentTriggerEl = null;
     if (overlay) {
       overlay.classList.remove('visible');
+      overlay.classList.remove('immersive');
       imgEl.src = '';
       imgEl.onload = null;
       imgEl.onerror = null;
@@ -1012,6 +1135,13 @@
     const m = host?.shadowRoot?.querySelector('.pp-main');
     if (m) m.classList.remove('zoomed');
     if (zoomBadge) zoomBadge.classList.remove('visible');
+    shortcutHelp?.classList.remove('visible');
+    isImmersive = false;
+    cancelHide();
+    clearTimeout(hintTimer);
+    hintTimer = null;
+    if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true });
+    previousFocus = null;
   }
 
   function extractWorkId(el) {
@@ -1026,17 +1156,78 @@
   }
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && currentWorkId) hide();
-    if (e.key === 'ArrowLeft' && currentWorkId) navigate(-1);
-    if (e.key === 'ArrowRight' && currentWorkId) navigate(1);
-    if (e.key === 'd' && currentWorkId && currentInfo && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target?.tagName)) return;
+    const key = e.key.toLowerCase();
+
+    if (e.key === 'Tab' && currentWorkId && isImmersive) {
+      const focusable = [...host.shadowRoot.querySelectorAll('button, a[href], [tabindex="0"]')]
+        .filter(element => element.getClientRects().length > 0 && !element.classList.contains('disabled'));
+      if (focusable.length > 0) {
+        e.preventDefault();
+        const index = focusable.indexOf(host.shadowRoot.activeElement);
+        const next = e.shiftKey
+          ? (index <= 0 ? focusable.length - 1 : index - 1)
+          : (index + 1) % focusable.length;
+        focusable[next].focus();
+      }
+      return;
+    }
+
+    if (e.key === 'Escape' && currentWorkId) {
+      e.preventDefault();
+      if (shortcutHelp?.classList.contains('visible')) {
+        shortcutHelp.classList.remove('visible');
+        return;
+      }
+      hide();
+    }
+    if (e.key === 'ArrowLeft' && currentWorkId) {
+      e.preventDefault();
+      if (currentPage > 0) goToPage(currentPage - 1);
+    }
+    if (e.key === 'ArrowRight' && currentWorkId) {
+      e.preventDefault();
+      if (currentInfo && currentPage < currentInfo.pageUrls.length - 1) goToPage(currentPage + 1);
+    }
+    if (key === 'j' && currentWorkId) {
+      e.preventDefault();
+      switchWork(1);
+    }
+    if (key === 'k' && currentWorkId) {
+      e.preventDefault();
+      switchWork(-1);
+    }
+    if (e.code === 'Space' && currentWorkId && !isImmersive) {
+      e.preventDefault();
+      enterImmersive();
+    }
+    if (key === '?' && currentWorkId) {
+      e.preventDefault();
+      shortcutHelp?.classList.toggle('visible');
+    }
+    if (key === 'b' && currentWorkId && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      bookmarkCurrent();
+    }
+    if (e.key === 'Enter' && currentWorkId) {
+      e.preventDefault();
+      window.open(`https://www.pixiv.net/artworks/${currentWorkId}`, '_blank');
+    }
+    if (key === 'd' && currentWorkId && currentInfo && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (e.shiftKey || currentInfo.isUgoira) {
+        window.PixivPlusDownload.downloadAllWork(currentInfo);
+        return;
+      }
       const url = currentInfo.pageUrls[currentPage]?.original;
       if (!url) return;
       const filename = window.PixivPlusAPI.generateFilename(currentInfo, currentPage);
       window.PixivPlusDownload.downloadFile(url, filename, currentInfo.tags, {
         thumbUrl: currentInfo.urls.small || currentInfo.urls.regular || '',
         title: currentInfo.title,
-        artist: currentInfo.artist
+        artist: currentInfo.artist,
+        workId: currentInfo.id,
+        pageIndex: currentPage
       });
     }
   });

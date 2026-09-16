@@ -5,19 +5,23 @@ Chrome 扩展插件（Manifest V3），为 Pixiv 增强悬浮预览、批量下�
 ## 功能
 
 ### 悬浮预览
-- **原图预览** — 鼠标悬停缩略图即可在深色面板中查看原图
+- **两段式预览** — 悬浮时使用不遮挡页面的侧边预览，点击图片或按 `Space` 进入沉浸查看
 - **拖拽平移** — 单击放大，拖拽移动查看细节，双击退出放大
 - **多页翻页** — 通过侧栏按钮或键盘方向键（`←` `→`）浏览多页作品
-- **跨作品导航** — 在当前页面的作品间快速切换
+- **跨作品导航** — 使用 `J` / `K` 在当前页面的作品间快速切换
 - **标签面板** — 查看作品所有标签，点击可直接跳转 Pixiv 搜索
 - **可调延迟** — 在设置中自定义悬浮触发延迟
 
 ### 下载
 - **原图画质** — 通过后台 Service Worker 下载原图分辨率图片
 - **单页 & 多页** — 多页作品弹出自定义选择面板，可勾选要下载的页面
+- **Ugoira 源文件** — 保存原始帧 ZIP，并附带包含逐帧延迟的 JSON
 - **文件名模板** — 使用 `{artist}`、`{title}`、`{id}`、`{page}` 自定义文件名
 - **自定义目录** — 通过 File System Access API 选择任意下载文件夹
-- **进度面板** — 浮动面板显示下载速度、进度条，支持取消和删除
+- **进度面板** — 浮动面板显示排队、下载速度和进度，支持真正取消网络请求
+- **稳定批量下载** — 最多 3 个并发任务，避免大量原图同时占满内存
+- **缩略图状态** — 直接显示排队、下载进度、完成和失败状态
+- **快捷操作** — `D` 下载当前页，`Shift+D` 下载整组，`B` 收藏，`?` 查看帮助
 - **自动关闭** — 所有下载完成后 3 秒自动收起面板
 
 ### 标签写入
@@ -28,9 +32,11 @@ Chrome 扩展插件（Manifest V3），为 Pixiv 增强悬浮预览、批量下�
 ## 安装
 
 1. 下载或克隆本仓库
-2. 在 Chrome 中打开 `chrome://extensions/`
+2. 在 Edge 中打开 `edge://extensions/`（Chrome 使用 `chrome://extensions/`）
 3. 开启右上角 **开发者模式**
 4. 点击 **加载已解压的扩展程序**，选择 `pixiv-plus` 文件夹
+
+发布包可通过 `npm run release:check` 生成到 `dist/`；该命令会先运行测试、清单/权限/CSP/远程代码检查，再生成 ZIP 与 SHA-256 校验文件。
 
 ## 设置
 
@@ -43,6 +49,8 @@ Chrome 扩展插件（Manifest V3），为 Pixiv 增强悬浮预览、批量下�
 | 写入图片标签 | 开启 | 将 Pixiv 标签写入下载图片的元数据 |
 | 文件名模板 | `{artist}-{title}-{id}` | 下载文件的命名模板 |
 
+设置页同时提供中英文界面，并可调整预览方式、下载并发数、重复文件策略和多图默认行为。
+
 ## 技术栈
 
 - **Manifest V3** Chrome 扩展
@@ -50,7 +58,7 @@ Chrome 扩展插件（Manifest V3），为 Pixiv 增强悬浮预览、批量下�
 - **Background Service Worker** 绕过 CORS 获取图片
 - **declarativeNetRequest** 为 `i.pximg.net` 注入 Referer 请求头
 - **File System Access API** 下载到任意目录
-- **Base64 Data URL** 在 Service Worker 和 Content Script 间传输图片数据
+- **分块消息流** 在 Service Worker 和 Content Script 间传输图片，避免整图 Data URL 的内存峰值
 
 ## 文件结构
 
@@ -78,3 +86,5 @@ pixiv-plus/
 ## License
 
 MIT
+
+隐私政策与发布说明分别见 [PRIVACY.md](PRIVACY.md)、[STORE_LISTING.md](STORE_LISTING.md) 和 [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md)。

@@ -10,6 +10,9 @@
   let panelVisible = false;
   let autoCloseTimer = null;
   let history = [];
+  let sessionTotal = 0;
+  let sessionFinished = 0;
+  const sessionFiles = new Set();
 
   const MAX_HISTORY = 100;
   const STORAGE_KEY = 'pp_download_history';
@@ -43,6 +46,7 @@
       .pp-panel.visible { display: flex; }
       .pp-panel.minimized .pp-panel-body,
       .pp-panel.minimized .pp-panel-footer { display: none; }
+      .pp-panel.minimized { width:auto;min-width:220px;border-radius:999px; }
       .pp-panel-header {
         display: flex;
         align-items: center;
@@ -61,6 +65,7 @@
         color: #5E6AD2;
         margin-left: 6px;
       }
+      .pp-panel-summary { color:#5A5F6A;font-size:11px;margin-left:8px; }
       .pp-panel-controls {
         display: flex;
         gap: 6px;
@@ -125,6 +130,7 @@
         text-align: right;
       }
       .pp-download-status.complete { color: #5E6AD2; }
+      .pp-download-status.queued { color: #8A8F98; }
       .pp-download-status.cancelled { color: #8A8F98; }
       .pp-download-status.error { color: rgba(255,107,107,0.8); }
       .pp-download-actions {
@@ -165,6 +171,7 @@
         transition: background 0.15s, color 0.15s;
       }
       .pp-panel-footer button:hover { background: rgba(255,255,255,0.1); color: #EDEDEF; }
+      #pp-choose-folder { max-width:145px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
       .pp-show-more {
         background: rgba(94,106,210,0.12) !important;
         border-color: rgba(94,106,210,0.2) !important;
@@ -340,14 +347,17 @@
     panel.id = 'pp-download-panel';
     panel.innerHTML = `
       <div class="pp-panel-header" id="pp-panel-header">
-        <span><span class="pp-panel-title">Downloads</span><span class="pp-panel-count" id="pp-panel-count"></span></span>
+        <span><span class="pp-panel-title">Downloads</span><span class="pp-panel-count" id="pp-panel-count"></span><span class="pp-panel-summary" id="pp-panel-summary"></span></span>
         <div class="pp-panel-controls">
+          <button id="pp-panel-pause" title="Pause queued downloads">Ⅱ</button>
+          <button id="pp-panel-cancel-all" title="Cancel all">×</button>
           <button id="pp-panel-minimize" title="Minimize">_</button>
           <button id="pp-panel-close" title="Close">&times;</button>
         </div>
       </div>
       <div class="pp-panel-body" id="pp-panel-body"></div>
       <div class="pp-panel-footer">
+        <button id="pp-choose-folder" title="Choose download folder">Folder: browser default</button>
         <button id="pp-show-more" class="pp-show-more" style="display:none;">Show More</button>
         <button id="pp-panel-clear">Clear</button>
       </div>
@@ -358,23 +368,44 @@
     shadow.getElementById('pp-panel-header').addEventListener('click', () => {
       panel.classList.toggle('minimized');
     });
-    shadow.getElementById('pp-panel-close').addEventListener('click', () => {
+    shadow.getElementById('pp-panel-close').addEventListener('click', e => {
+      e.stopPropagation();
       panel.classList.remove('visible');
       panelVisible = false;
+    });
+    shadow.getElementById('pp-panel-minimize').addEventListener('click', e => {
+      e.stopPropagation();
+      panel.classList.toggle('minimized');
+    });
+    shadow.getElementById('pp-panel-pause').addEventListener('click', e => {
+      e.stopPropagation();
+      const paused = window.PixivPlusDownload?.toggleQueuePaused();
+      e.currentTarget.textContent = paused ? '▶' : 'Ⅱ';
+      e.currentTarget.title = paused ? 'Resume queued downloads' : 'Pause queued downloads';
+    });
+    shadow.getElementById('pp-panel-cancel-all').addEventListener('click', e => {
+      e.stopPropagation();
+      window.PixivPlusDownload?.cancelAllDownloads();
     });
     shadow.getElementById('pp-show-more').addEventListener('click', () => {
       showHistoryModal(shadow);
     });
+    shadow.getElementById('pp-choose-folder').addEventListener('click', () => {
+      window.PixivPlusDownload?.chooseDirectory();
+    });
     shadow.getElementById('pp-panel-clear').addEventListener('click', () => {
       const body = shadow.getElementById('pp-panel-body');
-      body.querySelectorAll('.pp-download-item[data-state="in_progress"]').forEach(el => {
+      const activeItems = body.querySelectorAll('.pp-download-item[data-state="in_progress"], .pp-download-item[data-state="queued"]');
+      activeItems.forEach(el => {
         const url = el.dataset.url;
         if (url) window.PixivPlusDownload?.cancelDownload(url);
       });
-      body.innerHTML = '';
-      downloads.clear();
-      metaStore.clear();
-      updateCount(shadow);
+      if (activeItems.length === 0) {
+        body.innerHTML = '';
+        downloads.clear();
+        metaStore.clear();
+        updateCount(shadow);
+      }
     });
 
     document.body.appendChild(panelHost);
@@ -404,7 +435,9 @@
       metaStore.set(data.filename, {
         thumbUrl: data.thumbUrl || existing?.thumbUrl || '',
         title: data.title || existing?.title || '',
-        artist: data.artist || existing?.artist || ''
+        artist: data.artist || existing?.artist || '',
+        workId: data.workId || existing?.workId || '',
+        pageIndex: data.pageIndex ?? existing?.pageIndex ?? 0
       });
     }
 
@@ -414,25 +447,35 @@
       item.className = 'pp-download-item';
       item.dataset.url = data.url || '';
       item.innerHTML = `
-        <div class="pp-download-name" title="${escapeHtml(data.filename)}">${escapeHtml(data.filename)}</div>
+        <div class="pp-download-name"></div>
         <div class="pp-download-bar-row">
           <div class="pp-download-bar"><div class="pp-download-bar-fill"></div></div>
           <div class="pp-download-status"></div>
           <div class="pp-download-actions">
             <button class="pp-dl-cancel" title="Cancel">&#10005;</button>
+            <button class="pp-dl-retry" title="Retry" style="display:none;">&#8635;</button>
             <button class="pp-dl-remove" title="Remove">&#128465;</button>
           </div>
         </div>
       `;
+      const name = item.querySelector('.pp-download-name');
+      name.textContent = data.filename;
+      name.title = data.filename;
       body.appendChild(item);
       downloads.set(data.filename, item);
+
+      if (!sessionFiles.has(data.filename)) {
+        sessionFiles.add(data.filename);
+        sessionTotal++;
+      }
 
       // Cancel button
       item.querySelector('.pp-dl-cancel').addEventListener('click', (e) => {
         e.stopPropagation();
         const url = item.dataset.url;
-        if (url && item.dataset.state === 'in_progress') {
+        if (url && ['queued', 'in_progress'].includes(item.dataset.state)) {
           window.PixivPlusDownload?.cancelDownload(url);
+          return;
         }
         item.remove();
         downloads.delete(data.filename);
@@ -444,22 +487,45 @@
       item.querySelector('.pp-dl-remove').addEventListener('click', (e) => {
         e.stopPropagation();
         const url = item.dataset.url;
-        if (url && item.dataset.state === 'in_progress') {
+        if (url && ['queued', 'in_progress'].includes(item.dataset.state)) {
           window.PixivPlusDownload?.cancelDownload(url);
+          return;
         }
         item.remove();
         downloads.delete(data.filename);
         metaStore.delete(data.filename);
         updateCount(shadow);
       });
+
+      item.querySelector('.pp-dl-retry').addEventListener('click', e => {
+        e.stopPropagation();
+        window.PixivPlusDownload?.retryDownload(data.filename);
+      });
     }
 
     const fill = item.querySelector('.pp-download-bar-fill');
     const status = item.querySelector('.pp-download-status');
     const actions = item.querySelector('.pp-download-actions');
+    const retry = item.querySelector('.pp-dl-retry');
+    const cancel = item.querySelector('.pp-dl-cancel');
     const prevState = item.dataset.state || null;
 
-    if (data.state === 'in_progress') {
+    if (data.state === 'queued') {
+      if (item.dataset.sessionFinished === 'true') {
+        sessionFinished = Math.max(0, sessionFinished - 1);
+        item.dataset.sessionFinished = 'false';
+      }
+      clearTimeout(autoCloseTimer);
+      autoCloseTimer = null;
+      fill.style.width = '0%';
+      fill.className = 'pp-download-bar-fill';
+      status.className = 'pp-download-status queued';
+      status.textContent = data.speed || 'Queued';
+      item.dataset.state = 'queued';
+      if (actions) actions.style.display = '';
+      if (retry) retry.style.display = 'none';
+      if (cancel) cancel.style.display = '';
+    } else if (data.state === 'in_progress') {
       clearTimeout(autoCloseTimer);
       autoCloseTimer = null;
       const pct = data.totalBytes > 0 ? Math.round((data.bytesReceived / data.totalBytes) * 100) : 0;
@@ -469,6 +535,8 @@
       status.textContent = `${pct}% ${data.speed || ''}`;
       item.dataset.state = 'in_progress';
       if (actions) actions.style.display = '';
+      if (retry) retry.style.display = 'none';
+      if (cancel) cancel.style.display = '';
     } else if (data.state === 'complete') {
       fill.style.width = '100%';
       fill.className = 'pp-download-bar-fill complete';
@@ -481,7 +549,9 @@
       status.className = 'pp-download-status error';
       status.textContent = data.error || 'Failed';
       item.dataset.state = 'interrupted';
-      if (actions) actions.style.display = 'none';
+      if (actions) actions.style.display = '';
+      if (retry) retry.style.display = '';
+      if (cancel) cancel.style.display = 'none';
     } else if (data.state === 'cancelled') {
       fill.className = 'pp-download-bar-fill error';
       status.className = 'pp-download-status cancelled';
@@ -491,30 +561,39 @@
     }
 
     // Move completed item to history and remove from panel
-    if (['complete', 'interrupted', 'cancelled'].includes(data.state) && prevState === 'in_progress') {
+    if (['complete', 'interrupted', 'cancelled'].includes(data.state) && ['queued', 'in_progress'].includes(prevState)) {
+      if (item.dataset.sessionFinished !== 'true') {
+        sessionFinished++;
+        item.dataset.sessionFinished = 'true';
+      }
       const meta = metaStore.get(data.filename) || {};
       addToHistory(data, meta);
       metaStore.delete(data.filename);
 
-      setTimeout(() => {
-        item.remove();
-        downloads.delete(data.filename);
-        updateCount(shadow);
-        updateShowMoreButton(shadow);
-      }, 800);
+      if (data.state !== 'interrupted') {
+        setTimeout(() => {
+          item.remove();
+          downloads.delete(data.filename);
+          updateCount(shadow);
+          updateShowMoreButton(shadow);
+        }, 800);
+      }
 
       updateShowMoreButton(shadow);
 
-      // Auto-hide panel when all downloads finished
-      clearTimeout(autoCloseTimer);
-      autoCloseTimer = setTimeout(() => {
-        const body = shadow.getElementById('pp-panel-body');
-        const active = body?.querySelectorAll('.pp-download-item[data-state="in_progress"]').length || 0;
-        if (active === 0) {
-          panel.classList.remove('visible');
-          panelVisible = false;
-        }
-      }, 3000);
+      if (data.state !== 'interrupted') {
+        // Keep failures visible so the retry action remains discoverable.
+        clearTimeout(autoCloseTimer);
+        autoCloseTimer = setTimeout(() => {
+          const body = shadow.getElementById('pp-panel-body');
+          const active = body?.querySelectorAll('.pp-download-item[data-state="queued"], .pp-download-item[data-state="in_progress"]').length || 0;
+          const failures = body?.querySelectorAll('.pp-download-item[data-state="interrupted"]').length || 0;
+          if (active === 0 && failures === 0) {
+            panel.classList.remove('visible');
+            panelVisible = false;
+          }
+        }, 3000);
+      }
     }
 
     updateCount(shadow);
@@ -526,6 +605,8 @@
       thumbUrl: meta.thumbUrl || '',
       title: meta.title || '',
       artist: meta.artist || '',
+      workId: meta.workId || '',
+      pageIndex: meta.pageIndex ?? 0,
       state: data.state,
       error: data.error || '',
       timestamp: Date.now()
@@ -539,6 +620,8 @@
       if (result[STORAGE_KEY] && Array.isArray(result[STORAGE_KEY])) {
         history = result[STORAGE_KEY];
         updateShowMoreButton(panelHost?.shadowRoot);
+        const workIds = history.filter(item => item.state === 'complete' && item.workId).map(item => item.workId);
+        window.PixivPlusDownload?.markDownloadedWorks(workIds);
       }
     });
   }
@@ -568,8 +651,15 @@
     const body = shadow?.getElementById('pp-panel-body');
     const countEl = shadow?.getElementById('pp-panel-count');
     if (!body || !countEl) return;
-    const active = body.querySelectorAll('.pp-download-item[data-state="in_progress"]').length;
+    const active = body.querySelectorAll('.pp-download-item[data-state="queued"], .pp-download-item[data-state="in_progress"]').length;
     countEl.textContent = active > 0 ? `(${active})` : '';
+    const summary = shadow?.getElementById('pp-panel-summary');
+    if (summary) summary.textContent = sessionTotal > 0 ? `${sessionFinished}/${sessionTotal}` : '';
+  }
+
+  function setFolderName(name) {
+    const button = panelHost?.shadowRoot?.getElementById('pp-choose-folder');
+    if (button) button.textContent = `Folder: ${name || 'browser default'}`;
   }
 
   function showHistoryModal(shadow) {
@@ -613,24 +703,43 @@
         const card = document.createElement('div');
         card.className = 'pp-history-card';
 
-        const thumbHtml = item.thumbUrl
-          ? `<img class="pp-history-card-thumb" src="${escapeHtml(item.thumbUrl)}" loading="lazy" onerror="this.outerHTML='<div class=\\'pp-history-card-placeholder\\'>&#128444;</div>'">`
-          : `<div class="pp-history-card-placeholder">&#128444;</div>`;
-
         const stateLabel = item.state === 'complete' ? 'Done'
           : item.state === 'interrupted' ? 'Failed'
           : 'Cancelled';
 
-        card.innerHTML = `
-          ${thumbHtml}
-          <div class="pp-history-card-info">
-            <div class="pp-history-card-title" title="${escapeHtml(item.title || item.filename)}">${escapeHtml(item.title || item.filename)}</div>
-            <div class="pp-history-card-meta">
-              <span class="pp-history-card-artist">${escapeHtml(item.artist || '')}</span>
-              <span class="pp-history-card-state ${item.state}">${stateLabel}</span>
-            </div>
-          </div>
-        `;
+        const placeholder = document.createElement('div');
+        placeholder.className = 'pp-history-card-placeholder';
+        placeholder.textContent = '🖼';
+
+        if (item.thumbUrl) {
+          const thumb = document.createElement('img');
+          thumb.className = 'pp-history-card-thumb';
+          thumb.src = item.thumbUrl;
+          thumb.loading = 'lazy';
+          thumb.alt = '';
+          thumb.addEventListener('error', () => thumb.replaceWith(placeholder), { once: true });
+          card.appendChild(thumb);
+        } else {
+          card.appendChild(placeholder);
+        }
+
+        const info = document.createElement('div');
+        info.className = 'pp-history-card-info';
+        const title = document.createElement('div');
+        title.className = 'pp-history-card-title';
+        title.textContent = item.title || item.filename;
+        title.title = item.title || item.filename;
+        const meta = document.createElement('div');
+        meta.className = 'pp-history-card-meta';
+        const artist = document.createElement('span');
+        artist.className = 'pp-history-card-artist';
+        artist.textContent = item.artist || '';
+        const state = document.createElement('span');
+        state.className = `pp-history-card-state ${['complete', 'interrupted', 'cancelled'].includes(item.state) ? item.state : 'cancelled'}`;
+        state.textContent = stateLabel;
+        meta.append(artist, state);
+        info.append(title, meta);
+        card.appendChild(info);
         grid.appendChild(card);
       }
     }
@@ -663,14 +772,11 @@
     }, 3000);
   }
 
-  function escapeHtml(str) {
-    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  }
-
   window.PixivPlusDownloadPanel = {
     init,
     showToast,
     updateDownload,
-    isDuplicate
+    isDuplicate,
+    setFolderName
   };
 })();

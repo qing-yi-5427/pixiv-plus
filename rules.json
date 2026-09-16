@@ -13,7 +13,8 @@
       ]
     },
     "condition": {
-      "urlFilter": "||i.pximg.net"
+      "requestDomains": ["i.pximg.net"],
+      "resourceTypes": ["image", "xmlhttprequest"]
     }
   }
 ]

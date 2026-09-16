@@ -1,8 +1,31 @@
 {
-  "appName": {
-    "message": "PixivPlus"
-  },
-  "appDescription": {
-    "message": "Hover preview, one-click download, and download manager for Pixiv"
-  }
+  "appName": { "message": "PixivPlus" },
+  "appDescription": { "message": "Hover preview, immersive browsing, and reliable original-image downloads for Pixiv" },
+  "settingsSubtitle": { "message": "Browse faster. Save originals reliably." },
+  "browseSection": { "message": "Browsing" },
+  "hoverPreview": { "message": "Hover preview" },
+  "previewDelay": { "message": "Preview delay (ms)" },
+  "previewBehavior": { "message": "Hover behavior" },
+  "previewPeek": { "message": "Side preview, click to expand" },
+  "previewImmersive": { "message": "Open immersive viewer" },
+  "downloadSection": { "message": "Downloads" },
+  "downloadDirectory": { "message": "Download folder" },
+  "resetDirectory": { "message": "Reset folder" },
+  "directoryHint": { "message": "Choose a folder from the download panel or on first download." },
+  "concurrency": { "message": "Concurrent downloads" },
+  "duplicatePolicy": { "message": "Existing files" },
+  "duplicateSkip": { "message": "Skip" },
+  "duplicateRename": { "message": "Auto rename" },
+  "duplicateOverwrite": { "message": "Overwrite" },
+  "multiPageBehavior": { "message": "Multi-page click" },
+  "multiAsk": { "message": "Ask which pages" },
+  "multiAll": { "message": "Download all pages" },
+  "fileSection": { "message": "File and metadata" },
+  "embedTags": { "message": "Embed Pixiv tags" },
+  "filenameTemplate": { "message": "Filename template" },
+  "availableTokens": { "message": "Available" },
+  "openPixivFirst": { "message": "Open pixiv.net first" },
+  "directoryNotSet": { "message": "Not set — select on first download" },
+  "directoryReset": { "message": "Folder reset" },
+  "saved": { "message": "Saved" }
 }

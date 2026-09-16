@@ -5,7 +5,9 @@
 }
 
 body {
-  width: 320px;
+  width: 380px;
+  max-height: 600px;
+  overflow-y: auto;
   background: #0a0a0c;
   color: #EDEDEF;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -19,8 +21,33 @@ body {
 h1 {
   font-size: 18px;
   font-weight: 700;
-  margin-bottom: 16px;
+  margin-bottom: 2px;
   color: #5E6AD2;
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.app-header p { color: #5A5F6A; font-size: 11px; }
+.version { color: #5E6AD2; background: rgba(94,106,210,.12); padding: 3px 7px; border-radius: 99px; font-size: 10px; }
+
+.settings-section {
+  background: #0e0e11;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.settings-section h2 {
+  color: #EDEDEF;
+  font-size: 12px;
+  margin-bottom: 12px;
+  letter-spacing: .02em;
 }
 
 .field {
@@ -36,7 +63,8 @@ label {
 }
 
 input[type="text"],
-input[type="number"] {
+input[type="number"],
+select {
   width: 100%;
   padding: 8px 10px;
   background: #111114;
@@ -48,10 +76,16 @@ input[type="number"] {
   transition: border-color 0.15s;
 }
 
+select { appearance: none; background-image: linear-gradient(45deg,transparent 50%,#5A5F6A 50%),linear-gradient(135deg,#5A5F6A 50%,transparent 50%); background-position: calc(100% - 14px) 13px,calc(100% - 10px) 13px; background-size: 4px 4px; background-repeat: no-repeat; }
+
 input[type="text"]:focus,
-input[type="number"]:focus {
+input[type="number"]:focus,
+select:focus {
   border-color: #5E6AD2;
 }
+
+.two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+[hidden] { display: none !important; }
 
 small {
   display: block;
@@ -148,7 +182,8 @@ hr {
   margin: 14px 0;
 }
 
-.dir-btn {
+.dir-btn,
+.secondary-btn {
   width: 100%;
   padding: 8px;
   background: rgba(255,255,255,0.06);
@@ -161,7 +196,8 @@ hr {
   transition: background 0.15s;
 }
 
-.dir-btn:hover {
+.dir-btn:hover,
+.secondary-btn:hover {
   background: rgba(255,255,255,0.1);
 }
 
