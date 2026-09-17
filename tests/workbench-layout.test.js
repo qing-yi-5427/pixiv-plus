@@ -15,6 +15,14 @@ test('workbench constrains the grid row so the feed scrolls and preview stays vi
   assert.match(source, /\.ppw-stage \{[^}]*min-height:0/);
 });
 
+test('artwork metadata floats beside portrait images and adapts for landscape images', () => {
+  assert.match(source, /\.ppw-details \{[\s\S]*?position:absolute[\s\S]*?backdrop-filter:blur\(22px\)/);
+  assert.match(source, /\.ppw-shell\[data-image-orientation="portrait"\] \.ppw-stage \{ padding-right:300px; \}/);
+  assert.match(source, /\.ppw-shell\[data-image-orientation="landscape"\] \.ppw-details/);
+  assert.match(source, /shell\.dataset\.imageOrientation = previewImage\.naturalHeight > previewImage\.naturalWidth \* 1\.08/);
+  assert.match(source, /\.ppw-shortcuts \{[^}]*padding:0 420px 0 15px/);
+});
+
 test('thumbnail rows keep a square intrinsic size instead of collapsing into the viewport', () => {
   const feedRule = source.match(/\.ppw-feed \{([^}]*)\}/)?.[1] || '';
   const thumbnailRule = source.match(/\.ppw-thumb \{([^}]*)\}/)?.[1] || '';

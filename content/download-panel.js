@@ -348,7 +348,7 @@
         --pp-muted:#737984;--pp-line:#e1e4e9;--pp-blue:#0096fa;--pp-blue-soft:#e7f5ff;
         --pp-success:#0b9963;--pp-danger:#d9365b;color-scheme:light dark;
       }
-      :host([data-workbench="true"]) { --pp-panel-bottom:112px; }
+      :host([data-workbench="true"]) { --pp-panel-bottom:0px; }
       .pp-panel {
         bottom:var(--pp-panel-bottom);right:16px;width:min(316px,calc(100vw - 24px));max-height:318px;
         background:var(--pp-bg);border:1px solid var(--pp-line);border-radius:12px;
@@ -363,6 +363,13 @@
       .pp-panel-count { color:var(--pp-blue);margin-left:5px; }
       .pp-panel-summary { color:var(--pp-muted);font-size:11px;margin-left:6px; }
       .pp-panel-controls { gap:2px; }
+      .pp-panel-inline { display:none;min-width:0; }
+      .pp-inline-current { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--pp-text); }
+      .pp-inline-track { height:3px;overflow:hidden;border-radius:999px;background:var(--pp-soft); }
+      .pp-inline-fill { display:block;width:0;height:100%;border-radius:inherit;background:var(--pp-blue);transition:width .2s ease; }
+      .pp-inline-fill.complete { background:var(--pp-success); }
+      .pp-inline-fill.error { background:var(--pp-danger); }
+      .pp-inline-status { min-width:78px;text-align:right;color:var(--pp-muted);font-size:10px;white-space:nowrap; }
       .pp-panel-controls button,.pp-download-actions button {
         width:28px;height:28px;padding:0;display:grid;place-items:center;background:transparent;
         border:0;border-radius:7px;color:var(--pp-muted);font-size:14px;transition:background .15s,color .15s;
@@ -422,12 +429,35 @@
       .pp-toast.success { border-left:3px solid var(--pp-success)!important; }
       .pp-toast.error { border-left:3px solid var(--pp-danger)!important; }
       .pp-toast.info { border-left:3px solid var(--pp-blue)!important; }
+      :host([data-workbench="true"]) .pp-panel,
+      :host([data-workbench="true"]) .pp-panel.minimized {
+        bottom:0;right:0;width:clamp(300px,36vw,420px);min-width:0;height:31px;max-height:31px;
+        border:0;border-left:1px solid var(--pp-line);border-radius:0;box-shadow:none;overflow:hidden;
+      }
+      :host([data-workbench="true"]) .pp-panel-header {
+        height:31px;min-height:31px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;
+        justify-content:stretch;gap:8px;padding:3px 7px 3px 8px;border:0;cursor:default;
+      }
+      :host([data-workbench="true"]) .pp-panel-header:hover { background:var(--pp-bg); }
+      :host([data-workbench="true"]) .pp-panel-heading { display:flex;align-items:center; }
+      :host([data-workbench="true"]) .pp-panel-title { width:22px;font-size:0; }
+      :host([data-workbench="true"]) .pp-panel-title::before { width:22px;height:22px;margin:0;font-size:12px;border-radius:7px; }
+      :host([data-workbench="true"]) .pp-panel-summary { display:none; }
+      :host([data-workbench="true"]) .pp-panel-inline { display:grid;grid-template-columns:minmax(72px,1fr) 92px auto;align-items:center;gap:7px; }
+      :host([data-workbench="true"]) .pp-panel-controls button { width:23px;height:23px;font-size:12px; }
+      :host([data-workbench="true"]) #pp-panel-minimize,
+      :host([data-workbench="true"]) #pp-panel-close,
+      :host([data-workbench="true"]) .pp-panel-body,
+      :host([data-workbench="true"]) .pp-panel-footer { display:none; }
+      :host([data-workbench="true"]) .pp-toast { right:12px;bottom:42px; }
       @media (prefers-color-scheme:dark) {
         :host { --pp-bg:#17191f;--pp-soft:#22252c;--pp-text:#eff1f4;--pp-muted:#9aa1ad;--pp-line:#2d3139;--pp-blue:#35a9ff;--pp-blue-soft:#12354d;--pp-success:#4bd79b;--pp-danger:#ff6682; }
       }
       @media (max-width:680px) {
         .pp-panel { right:12px; }
         .pp-toast { right:12px;bottom:calc(var(--pp-panel-bottom) + 58px);max-width:calc(100vw - 24px); }
+        :host([data-workbench="true"]) .pp-panel,:host([data-workbench="true"]) .pp-panel.minimized { right:0;width:330px;max-width:calc(100vw - 116px); }
+        :host([data-workbench="true"]) .pp-panel-inline { grid-template-columns:minmax(62px,1fr) 72px auto;gap:5px; }
       }
     `;
     shadow.appendChild(style);
@@ -437,7 +467,12 @@
     panel.id = 'pp-download-panel';
     panel.innerHTML = `
       <div class="pp-panel-header" id="pp-panel-header">
-        <span><span class="pp-panel-title">Downloads</span><span class="pp-panel-count" id="pp-panel-count"></span><span class="pp-panel-summary" id="pp-panel-summary"></span></span>
+        <span class="pp-panel-heading"><span class="pp-panel-title">Downloads</span><span class="pp-panel-count" id="pp-panel-count"></span><span class="pp-panel-summary" id="pp-panel-summary"></span></span>
+        <div class="pp-panel-inline" aria-live="polite">
+          <span class="pp-inline-current" id="pp-inline-current"></span>
+          <span class="pp-inline-track"><i class="pp-inline-fill" id="pp-inline-fill"></i></span>
+          <span class="pp-inline-status" id="pp-inline-status"></span>
+        </div>
         <div class="pp-panel-controls">
           <button id="pp-panel-pause" title="Pause queued downloads">Ⅱ</button>
           <button id="pp-panel-cancel-all" title="Cancel all">×</button>
@@ -456,6 +491,7 @@
 
     // Events
     shadow.getElementById('pp-panel-header').addEventListener('click', () => {
+      if (panelHost.dataset.workbench === 'true') return;
       panel.classList.toggle('minimized');
     });
     shadow.getElementById('pp-panel-close').addEventListener('click', e => {
@@ -617,6 +653,7 @@
       status.className = 'pp-download-status queued';
       status.textContent = data.speed || 'Queued';
       item.dataset.state = 'queued';
+      item.dataset.progress = '0';
       if (actions) actions.style.display = '';
       if (retry) retry.style.display = 'none';
       if (cancel) cancel.style.display = '';
@@ -629,6 +666,7 @@
       status.className = 'pp-download-status';
       status.textContent = `${pct}% ${data.speed || ''}`;
       item.dataset.state = 'in_progress';
+      item.dataset.progress = String(pct);
       if (actions) actions.style.display = '';
       if (retry) retry.style.display = 'none';
       if (cancel) cancel.style.display = '';
@@ -638,12 +676,14 @@
       status.className = 'pp-download-status complete';
       status.textContent = 'Done';
       item.dataset.state = 'complete';
+      item.dataset.progress = '100';
       if (actions) actions.style.display = 'none';
     } else if (data.state === 'interrupted') {
       fill.className = 'pp-download-bar-fill error';
       status.className = 'pp-download-status error';
       status.textContent = data.error || 'Failed';
       item.dataset.state = 'interrupted';
+      item.dataset.progress = item.dataset.progress || '0';
       if (actions) actions.style.display = '';
       if (retry) retry.style.display = '';
       if (cancel) cancel.style.display = 'none';
@@ -652,6 +692,7 @@
       status.className = 'pp-download-status cancelled';
       status.textContent = 'Cancelled';
       item.dataset.state = 'cancelled';
+      item.dataset.progress = item.dataset.progress || '0';
       if (actions) actions.style.display = 'none';
     }
 
@@ -750,6 +791,41 @@
     countEl.textContent = active > 0 ? `(${active})` : '';
     const summary = shadow?.getElementById('pp-panel-summary');
     if (summary) summary.textContent = sessionTotal > 0 ? `${sessionFinished}/${sessionTotal}` : '';
+    updateInlineProgress(shadow, body);
+  }
+
+  function updateInlineProgress(shadow, body) {
+    const label = shadow?.getElementById('pp-inline-current');
+    const fill = shadow?.getElementById('pp-inline-fill');
+    const status = shadow?.getElementById('pp-inline-status');
+    if (!label || !fill || !status || !body) return;
+
+    const items = [...body.querySelectorAll('.pp-download-item')];
+    const activeItems = items.filter(item => ['queued', 'in_progress'].includes(item.dataset.state));
+    const failedItems = items.filter(item => item.dataset.state === 'interrupted');
+    const current = activeItems.find(item => item.dataset.state === 'in_progress')
+      || activeItems[0]
+      || failedItems[0]
+      || items[0];
+
+    if (!current) {
+      label.textContent = 'Downloads';
+      status.textContent = sessionTotal ? `${sessionFinished}/${sessionTotal}` : '';
+      fill.style.width = '0%';
+      fill.className = 'pp-inline-fill';
+      return;
+    }
+
+    const name = current.querySelector('.pp-download-name')?.textContent || 'Download';
+    const extra = activeItems.length > 1 ? ` +${activeItems.length - 1}` : '';
+    label.textContent = `${name}${extra}`;
+    label.title = name;
+    status.textContent = current.querySelector('.pp-download-status')?.textContent || '';
+
+    const progressItems = activeItems.length ? activeItems : [current];
+    const progress = Math.round(progressItems.reduce((sum, item) => sum + Number(item.dataset.progress || 0), 0) / progressItems.length);
+    fill.style.width = `${progress}%`;
+    fill.className = `pp-inline-fill${current.dataset.state === 'interrupted' ? ' error' : current.dataset.state === 'complete' ? ' complete' : ''}`;
   }
 
   function setFolderName(name) {
@@ -758,7 +834,9 @@
   }
 
   function setWorkbenchActive(active) {
-    if (panelHost) panelHost.dataset.workbench = active ? 'true' : 'false';
+    if (!panelHost) return;
+    panelHost.dataset.workbench = active ? 'true' : 'false';
+    if (active) panelHost.shadowRoot?.getElementById('pp-download-panel')?.classList.remove('minimized');
   }
 
   function syncItemThumbnail(item, data) {

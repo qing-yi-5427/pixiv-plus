@@ -8,10 +8,13 @@ const source = fs.readFileSync(
   'utf8'
 );
 
-test('download center uses the workbench visual tokens and compact placement', () => {
+test('download center uses the workbench visual tokens and docks into the shortcut bar', () => {
   assert.match(source, /--pp-panel-bottom:18px/);
-  assert.match(source, /:host\(\[data-workbench="true"\]\) \{ --pp-panel-bottom:112px; \}/);
+  assert.match(source, /:host\(\[data-workbench="true"\]\) \{ --pp-panel-bottom:0px; \}/);
   assert.match(source, /bottom:var\(--pp-panel-bottom\);right:16px;width:min\(316px,calc\(100vw - 24px\)\)/);
+  assert.match(source, /:host\(\[data-workbench="true"\]\) \.pp-panel,[\s\S]*?height:31px;max-height:31px/);
+  assert.match(source, /class="pp-panel-inline" aria-live="polite"/);
+  assert.match(source, /function updateInlineProgress\(shadow, body\)/);
   assert.match(source, /--pp-blue:#0096fa/);
   assert.match(source, /@media \(prefers-color-scheme:dark\)/);
 });
