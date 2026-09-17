@@ -8,6 +8,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'getSettings') {
     chrome.storage.local.get({
       hoverPreview: true,
+      workbenchEnabled: true,
       hoverDelay: 400,
       filenameTemplate: '{artist}-{title}-{id}',
       embedTags: true,
@@ -24,6 +25,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'saveSettings') {
     const toSave = {};
     if (msg.hoverPreview !== undefined) toSave.hoverPreview = msg.hoverPreview;
+    if (msg.workbenchEnabled !== undefined) toSave.workbenchEnabled = msg.workbenchEnabled;
     if (msg.hoverDelay !== undefined) toSave.hoverDelay = msg.hoverDelay;
     if (msg.embedTags !== undefined) toSave.embedTags = msg.embedTags;
     if (msg.filenameTemplate !== undefined) toSave.filenameTemplate = msg.filenameTemplate;

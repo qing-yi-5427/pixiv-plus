@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "__MSG_appName__",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "__MSG_appDescription__",
   "short_name": "PixivPlus",
   "default_locale": "en",
@@ -26,10 +26,12 @@
     {
       "matches": ["*://www.pixiv.net/*"],
       "js": [
+        "lib/workbench-model.js",
         "lib/pixiv-api.js",
         "content/download-panel.js",
         "content/hover-preview.js",
         "content/bookmark-download.js",
+        "content/workbench.js",
         "content/main.js"
       ],
       "css": ["content/style.css"],

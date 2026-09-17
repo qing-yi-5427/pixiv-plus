@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   localize();
   const fields = {
+    workbenchEnabled: document.getElementById('workbench-enabled'),
     hoverPreview: document.getElementById('hover-preview'),
     hoverDelay: document.getElementById('hover-delay'),
     previewBehavior: document.getElementById('preview-behavior'),
@@ -16,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const status = document.getElementById('status');
 
   chrome.runtime.sendMessage({ type: 'getSettings' }, settings => {
+    fields.workbenchEnabled.checked = settings.workbenchEnabled !== false;
     fields.hoverPreview.checked = settings.hoverPreview !== false;
     fields.hoverDelay.value = settings.hoverDelay ?? 400;
     fields.previewBehavior.value = settings.previewBehavior || 'peek';
@@ -68,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function saveSettings() {
     chrome.runtime.sendMessage({
       type: 'saveSettings',
+      workbenchEnabled: fields.workbenchEnabled.checked,
       hoverPreview: fields.hoverPreview.checked,
       hoverDelay: Number.parseInt(fields.hoverDelay.value, 10) || 400,
       previewBehavior: fields.previewBehavior.value,

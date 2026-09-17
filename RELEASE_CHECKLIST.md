@@ -1,16 +1,19 @@
-# PixivPlus 2.0.0 Release Checklist
+# PixivPlus 2.1.0 Release Checklist
 
 ## Automated
 
 - [x] Run `npm run release:check`.
 - [x] Confirm all tests and validation checks pass.
-- [x] Inspect `dist/pixiv-plus-2.0.0.zip` and verify that it contains runtime files only.
+- [x] Inspect `dist/pixiv-plus-2.1.0.zip` and verify that it contains runtime files only.
 - [x] Confirm `manifest.json` and `package.json` versions match.
 - [x] Register the unpacked extension and its service worker in Microsoft Edge 153 using an isolated browser profile.
 
 ## Manual browser QA
 
 - [ ] Repeat the unpacked-extension check in the user's normal Edge profile.
+- [ ] Verify the following-feed workbench discovers newly appended Pixiv cards and can return to the original page.
+- [ ] Verify work navigation, page navigation, zoom, pan, focus mode, unread filtering, and density changes.
+- [ ] Verify Shift range selection and batch downloads from the workbench.
 - [ ] Verify a single-page JPEG and PNG preview/download.
 - [ ] Verify a multi-page work with mixed page selection and Shift range selection.
 - [ ] Verify Ugoira ZIP and frame timing JSON downloads.

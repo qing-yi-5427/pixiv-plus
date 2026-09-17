@@ -142,6 +142,10 @@ button:hover {
   color: #8A8F98;
 }
 
+.toggle-group {
+  margin-bottom: 14px;
+}
+
 .toggle-label input {
   display: none;
 }

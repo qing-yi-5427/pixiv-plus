@@ -23,6 +23,7 @@ for (const host of manifest.host_permissions || []) {
 
 const requiredFiles = [
   'manifest.json', 'rules.json', 'background/service-worker.js', 'lib/pixiv-api.js',
+  'lib/workbench-model.js', 'content/workbench.js',
   'content/main.js', 'content/hover-preview.js', 'content/bookmark-download.js',
   'content/download-panel.js', 'content/style.css', 'popup/popup.html',
   'popup/popup.js', 'popup/popup.css', '_locales/en/messages.json',

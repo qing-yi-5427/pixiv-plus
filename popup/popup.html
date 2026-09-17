@@ -13,11 +13,19 @@
         <h1>PixivPlus</h1>
         <p data-i18n="settingsSubtitle">Browse faster. Save originals reliably.</p>
       </div>
-      <span class="version">2.0</span>
+      <span class="version">2.1</span>
     </header>
 
     <section class="settings-section">
       <h2 data-i18n="browseSection">Browsing</h2>
+      <div class="toggle-group">
+        <label class="toggle-label">
+          <span data-i18n="workbenchSetting">Following-feed workbench</span>
+          <input type="checkbox" id="workbench-enabled" checked>
+          <span class="toggle-switch"></span>
+        </label>
+        <small data-i18n="workbenchSettingHint">Replace the followed-artworks page with a reversible split-view browser.</small>
+      </div>
       <label class="toggle-label">
         <span data-i18n="hoverPreview">Hover preview</span>
         <input type="checkbox" id="hover-preview" checked>

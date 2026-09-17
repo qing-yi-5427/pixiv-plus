@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.0 - 2026-09-17
+
+- Added a reversible split-view workbench for Pixiv's followed-artworks feed.
+- Added a resizable thumbnail browser, unread state, density controls, and feed filters.
+- Added keyboard-first artwork and page navigation, focus mode, zoom, and drag-to-pan.
+- Added range selection and batch original-file downloads.
+- Preserved the native Pixiv page behind the workbench with a one-click fallback.
+- Added English and Simplified Chinese workbench UI and a dedicated settings switch.
+
 ## 2.0.0 - 2026-09-16
 
 - Rebuilt browsing around a non-blocking side preview and opt-in immersive viewer.

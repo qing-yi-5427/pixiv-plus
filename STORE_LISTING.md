@@ -2,7 +2,7 @@
 
 ## Single purpose
 
-PixivPlus improves browsing artwork on Pixiv and lets users save the original files they explicitly select through a reliable, visible download queue.
+PixivPlus turns Pixiv's followed-artworks feed into a reversible split-view browser and lets users save the original files they explicitly select through a reliable, visible download queue.
 
 ## Permission justifications
 
@@ -27,7 +27,7 @@ Browse Pixiv in a fast side preview and reliably download original images, multi
 
 ### Description
 
-PixivPlus is a focused browsing and download companion for Pixiv. Hover over an artwork to open a non-blocking side preview, click or press Space for an immersive viewer, and navigate pages and nearby works without repeatedly leaving the feed. Keyboard shortcuts make it easy to bookmark or save the current page while browsing.
+PixivPlus is a focused browsing and download companion for Pixiv. Its optional following-feed workbench places a resizable thumbnail browser on the left and a large, original-ratio preview on the right. It supports unread filtering, density controls, range selection, keyboard navigation, focus mode, and a one-click return to Pixiv's original page. On other Pixiv pages, hover preview and the immersive viewer remain available.
 
 Downloads run through a visible queue with bounded concurrency, real cancellation, retry, duplicate detection, filename templates, optional Pixiv tag metadata, and persistent history. Multi-page works include page selection, format and resolution details, Shift range selection, and estimated download size. Ugoira works can be saved as the original frame ZIP together with frame timing JSON.
 
@@ -45,7 +45,7 @@ Pixiv, artwork, image downloader, original image, illustration, Ugoira, gallery
 
 ### 详细说明
 
-PixivPlus 是一个专注于 Pixiv 浏览与原图下载的浏览器扩展。将鼠标悬停在作品上即可打开不遮挡页面的侧边预览，点击图片或按 Space 进入沉浸查看模式，并可通过键盘连续浏览作品、翻页、收藏和下载，不必频繁离开信息流。
+PixivPlus 是一个专注于 Pixiv 浏览与原图下载的浏览器扩展。可选的关注动态工作台将缩略图浏览器放在左侧，将大幅原比例预览放在右侧，并支持未读筛选、密度调整、Shift 连选、键盘导航和专注模式；用户可随时一键返回 Pixiv 原版页面。其他 Pixiv 页面仍可使用悬浮预览和沉浸查看。
 
 所有下载都进入可见的任务队列，支持并发限制、真正取消、失败重试、重复文件检测、文件名模板、可选标签元数据以及本地下载历史。多图作品支持页面选择、格式和分辨率信息、Shift 连选以及预计下载体积。Ugoira 动图可保存原始帧 ZIP 和对应的帧延迟 JSON。
 

@@ -529,6 +529,21 @@
     }
   }
 
+  async function downloadWorks(workIds) {
+    const ids = [...new Set((workIds || []).map(String).filter(id => /^\d+$/.test(id)))];
+    if (ids.length === 0) return;
+    const handle = await getDirHandle(true);
+    for (const workId of ids) {
+      try {
+        const info = await window.PixivPlusAPI.getWorkInfo(workId);
+        if (info.isUgoira) await downloadUgoiraWork(info, handle);
+        else queuePages(info, info.pageUrls.map((_, index) => index), handle);
+      } catch (err) {
+        window.PixivPlusDownloadPanel.showToast(`Could not queue ${workId}: ${err.message}`, 'error');
+      }
+    }
+  }
+
   async function downloadUgoiraWork(info, preparedHandle = undefined) {
     const handle = preparedHandle === undefined ? await getDirHandle(true) : preparedHandle;
     const ugoira = await window.PixivPlusAPI.getUgoiraMeta(info.id);
@@ -934,6 +949,7 @@
     toggleQueuePaused,
     retryDownload,
     downloadAllWork,
+    downloadWorks,
     chooseDirectory,
     markDownloadedWorks
   };
