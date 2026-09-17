@@ -7,6 +7,7 @@
   const ROUTE = '/bookmark_new_illust.php';
   const model = window.PixivPlusWorkbenchModel;
   const store = model.createStore();
+  const sourceCards = new Map();
   const thumbElements = new Map();
   const seenWorkIds = new Set();
   const batchSelection = new Set();
@@ -182,7 +183,7 @@
       .ppw-thumb.batch-selected .ppw-check { background:var(--ppw-success);border-color:var(--ppw-success); }
       .ppw-feed-pager { height:46px;flex:0 0 46px;display:flex;align-items:center;justify-content:center;gap:7px;padding:6px 9px;border-top:1px solid var(--ppw-line);background:var(--ppw-surface); }
       .ppw-feed-page-label { display:flex;align-items:center;gap:5px;color:var(--ppw-muted);font-size:12px;white-space:nowrap; }
-      .ppw-feed-page-input { width:48px;height:32px;padding:0 5px;border:1px solid var(--ppw-line);border-radius:7px;background:var(--ppw-surface);color:var(--ppw-text);text-align:center;font:inherit;font-variant-numeric:tabular-nums; }
+      .ppw-feed-page-input { width:48px;height:32px;padding:0;border:1px solid var(--ppw-line);border-radius:7px;background:var(--ppw-surface);color:var(--ppw-text);text-align:center;font:inherit;line-height:30px;font-variant-numeric:tabular-nums;appearance:textfield; }
       .ppw-feed-page-input:focus { outline:2px solid var(--ppw-blue-soft);border-color:var(--ppw-blue); }
       .ppw-resizer { background:var(--ppw-line);cursor:col-resize;position:relative; }
       .ppw-resizer:hover::after, .ppw-resizer.dragging::after { content:"";position:absolute;inset:0 -2px;background:var(--ppw-blue); }
@@ -259,7 +260,7 @@
           <div class="ppw-feed" id="ppw-feed"><div class="ppw-empty" id="ppw-empty"></div></div>
           <nav class="ppw-feed-pager" aria-label="Feed pagination">
             <button class="ppw-icon-button" id="ppw-feed-prev" type="button">‹</button>
-            <label class="ppw-feed-page-label"><span id="ppw-feed-page-prefix"></span><input class="ppw-feed-page-input" id="ppw-feed-page" type="number" min="1" step="1"><span id="ppw-feed-page-suffix"></span></label>
+            <label class="ppw-feed-page-label"><span id="ppw-feed-page-prefix"></span><input class="ppw-feed-page-input" id="ppw-feed-page" type="text" inputmode="numeric" pattern="[0-9]*"><span id="ppw-feed-page-suffix"></span></label>
             <button class="ppw-icon-button" id="ppw-feed-next" type="button">›</button>
           </nav>
         </aside>
@@ -476,6 +477,8 @@
       const titleText = image?.alt || link.getAttribute('aria-label') || '';
       const thumbUrl = image?.currentSrc || image?.src || image?.dataset?.src || '';
       discovered.push({ id, title: titleText, artist: userLink?.textContent?.trim() || '', thumbUrl });
+      const previousCard = sourceCards.get(id);
+      if (!previousCard?.isConnected || bookmarkControlIn(card)) sourceCards.set(id, card);
     }
 
     const changes = store.merge(discovered);
@@ -689,11 +692,38 @@
     if (currentWorkId) window.open(`https://www.pixiv.net/artworks/${currentWorkId}`, '_blank', 'noopener');
   }
 
+  function bookmarkControlIn(card) {
+    if (!card) return null;
+    const marker = card.querySelector([
+      '[data-click-label="bookmark"]',
+      'button[aria-label*="bookmark" i]',
+      'button[aria-label*="ブックマーク"]',
+      'button[aria-label*="收藏"]',
+      'button[title*="bookmark" i]',
+      'button[title*="ブックマーク"]',
+      'button[title*="收藏"]'
+    ].join(','));
+    if (marker) return marker.matches('button') ? marker : (marker.querySelector('button') || marker);
+    const buttons = [...card.querySelectorAll('button')]
+      .filter(button => !button.classList.contains('pp-download-btn'));
+    return buttons.length === 1 ? buttons[0] : null;
+  }
+
+  function nativeBookmarkButton(workId) {
+    const card = sourceCards.get(String(workId));
+    return card?.isConnected ? bookmarkControlIn(card) : null;
+  }
+
   async function bookmarkCurrentWork() {
     if (!currentWorkId || !currentInfo || bookmarkButton.disabled) return;
     bookmarkButton.disabled = true;
     try {
-      if (currentInfo.isBookmarked) {
+      const nativeButton = nativeBookmarkButton(currentWorkId);
+      if (nativeButton) {
+        nativeButton.click();
+        currentInfo.isBookmarked = !currentInfo.isBookmarked;
+        if (!currentInfo.isBookmarked) currentInfo.bookmarkId = '';
+      } else if (currentInfo.isBookmarked) {
         await window.PixivPlusAPI.unbookmarkWork(currentWorkId, currentInfo.bookmarkId);
         currentInfo.isBookmarked = false;
         currentInfo.bookmarkId = '';
@@ -941,7 +971,7 @@
       );
       if (workIds.size === 1 && workIds.has(workId)) {
         candidate = node;
-        if (node.querySelector('button')) break;
+        if (bookmarkControlIn(node)) break;
       } else if (workIds.size > 1) {
         break;
       }

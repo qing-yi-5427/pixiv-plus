@@ -25,9 +25,10 @@ function loadApi(fetchImpl, settings = {}, csrfToken = '') {
   const context = {
     window: {},
     document: {
-      querySelector: selector => selector === '#meta-global-data' && csrfToken
+      querySelector: selector => selector.includes('#meta-global-data') && csrfToken
         ? { getAttribute: () => JSON.stringify({ token: csrfToken }) }
         : null,
+      querySelectorAll: () => [],
       cookie: ''
     },
     chrome: {

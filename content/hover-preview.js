@@ -771,11 +771,34 @@
     btnBookmark.setAttribute('aria-label', btnBookmark.title);
   }
 
+  function nativeBookmarkButton() {
+    const card = currentTriggerEl?.closest('li, article, section') || currentTriggerEl?.parentElement;
+    if (!card?.isConnected) return null;
+    const marker = card.querySelector([
+      '[data-click-label="bookmark"]',
+      'button[aria-label*="bookmark" i]',
+      'button[aria-label*="ブックマーク"]',
+      'button[aria-label*="收藏"]',
+      'button[title*="bookmark" i]',
+      'button[title*="ブックマーク"]',
+      'button[title*="收藏"]'
+    ].join(','));
+    if (marker) return marker.matches('button') ? marker : marker.querySelector('button');
+    const buttons = [...card.querySelectorAll('button')]
+      .filter(button => !button.classList.contains('pp-download-btn'));
+    return buttons.length === 1 ? buttons[0] : null;
+  }
+
   async function bookmarkCurrent() {
     if (!currentWorkId || !currentInfo || btnBookmark.classList.contains('disabled')) return;
     btnBookmark.classList.add('disabled');
     try {
-      if (currentInfo.isBookmarked) {
+      const nativeButton = nativeBookmarkButton();
+      if (nativeButton) {
+        nativeButton.click();
+        currentInfo.isBookmarked = !currentInfo.isBookmarked;
+        if (!currentInfo.isBookmarked) currentInfo.bookmarkId = '';
+      } else if (currentInfo.isBookmarked) {
         await window.PixivPlusAPI.unbookmarkWork(currentWorkId, currentInfo.bookmarkId);
         currentInfo.isBookmarked = false;
         currentInfo.bookmarkId = '';
