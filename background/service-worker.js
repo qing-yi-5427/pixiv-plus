@@ -9,6 +9,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.local.get({
       hoverPreview: true,
       workbenchEnabled: true,
+      workbenchPreloadOriginals: false,
       hoverDelay: 400,
       filenameTemplate: '{artist}-{title}-{id}',
       embedTags: true,
@@ -26,6 +27,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const toSave = {};
     if (msg.hoverPreview !== undefined) toSave.hoverPreview = msg.hoverPreview;
     if (msg.workbenchEnabled !== undefined) toSave.workbenchEnabled = msg.workbenchEnabled;
+    if (msg.workbenchPreloadOriginals !== undefined) toSave.workbenchPreloadOriginals = msg.workbenchPreloadOriginals;
     if (msg.hoverDelay !== undefined) toSave.hoverDelay = msg.hoverDelay;
     if (msg.embedTags !== undefined) toSave.embedTags = msg.embedTags;
     if (msg.filenameTemplate !== undefined) toSave.filenameTemplate = msg.filenameTemplate;

@@ -10,6 +10,10 @@
   const store = model.createStore();
   const sourceCards = new Map();
   const thumbElements = new Map();
+  const workInfoCache = new Map();
+  const preloadedOriginalUrls = new Set();
+  const preloadedOriginalWorkIds = new Set();
+  const failedOriginalWorkIds = new Set();
   const seenWorkIds = new Set();
   const batchSelection = new Set();
 
@@ -35,6 +39,7 @@
   let downloadCurrentButton = null;
   let downloadAllButton = null;
   let bookmarkButton = null;
+  let loadOriginalsButton = null;
   let batchBar = null;
   let batchCount = null;
   let currentWorkId = null;
@@ -55,6 +60,10 @@
   let panY = 0;
   let pointerStart = null;
   let infoPositionQueued = false;
+  let preloadOriginalsByDefault = false;
+  let originalMode = false;
+  let preloadRun = null;
+  let autoPreloadTimer = null;
 
   const t = (key, fallback) => chrome.i18n.getMessage(key) || fallback;
 
@@ -67,6 +76,7 @@
       workbenchEnabled: true,
       workbenchLeftWidth: 340,
       workbenchDensity: 'balanced',
+      workbenchPreloadOriginals: false,
       [SEEN_WORKS_STORAGE_KEY]: []
     }, settings => {
       enabled = settings.workbenchEnabled !== false;
@@ -74,6 +84,8 @@
       density = ['compact', 'balanced', 'filmstrip'].includes(settings.workbenchDensity)
         ? settings.workbenchDensity
         : 'balanced';
+      preloadOriginalsByDefault = settings.workbenchPreloadOriginals === true;
+      originalMode = preloadOriginalsByDefault;
       replaceSeenWorkIds(settings[SEEN_WORKS_STORAGE_KEY]);
       syncRoute();
     });
@@ -86,6 +98,13 @@
       if (changes[SEEN_WORKS_STORAGE_KEY]) {
         replaceSeenWorkIds(changes[SEEN_WORKS_STORAGE_KEY].newValue);
         syncSeenState();
+      }
+      if (changes.workbenchPreloadOriginals) {
+        preloadOriginalsByDefault = changes.workbenchPreloadOriginals.newValue === true;
+        if (preloadOriginalsByDefault) {
+          originalMode = true;
+          scheduleAutoOriginalPreload();
+        }
       }
     });
 
@@ -165,6 +184,8 @@
       .ppw-button.primary { border-color:var(--ppw-blue);background:var(--ppw-blue);color:#fff; }
       .ppw-button.primary:hover { filter:brightness(.96); }
       .ppw-button.active { border-color:var(--ppw-blue);color:var(--ppw-blue);background:var(--ppw-blue-soft); }
+      .ppw-button.loading { cursor:progress; }
+      .ppw-button:disabled { cursor:default;opacity:.62; }
       .ppw-select { padding:0 30px 0 10px; }
       .ppw-body { min-height:0;overflow:hidden;flex:1;display:grid;grid-template-columns:var(--ppw-left-width) 5px minmax(0,1fr);grid-template-rows:minmax(0,1fr); }
       .ppw-browser { min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;background:var(--ppw-surface); }
@@ -269,6 +290,7 @@
         <span class="ppw-route-title" id="ppw-route-title"></span>
         <span class="ppw-summary" id="ppw-summary"></span>
         <span class="ppw-spacer"></span>
+        <button class="ppw-button" id="ppw-load-originals" type="button"><span>◉</span><span class="label"></span></button>
         <select class="ppw-select" id="ppw-filter" aria-label="Filter artworks">
           <option value="all"></option><option value="unread"></option>
         </select>
@@ -354,6 +376,7 @@
     downloadCurrentButton = shadow.getElementById('ppw-download-current');
     downloadAllButton = shadow.getElementById('ppw-download-all');
     bookmarkButton = shadow.getElementById('ppw-bookmark');
+    loadOriginalsButton = shadow.getElementById('ppw-load-originals');
     batchBar = shadow.getElementById('ppw-batch-bar');
     batchCount = shadow.getElementById('ppw-batch-count');
     localizeUI();
@@ -363,6 +386,8 @@
     shadow.getElementById('ppw-route-title').textContent = t('workbenchTitle', 'Following feed');
     shadow.getElementById('ppw-feed-title').textContent = t('workbenchUnreadFirst', 'Artwork feed');
     shadow.getElementById('ppw-original').textContent = t('workbenchOriginal', 'Original page');
+    loadOriginalsButton.querySelector('.label').textContent = t('workbenchLoadOriginals', 'Load page originals');
+    loadOriginalsButton.title = t('preloadOriginalsSettingHint', 'Preload the first original image of every artwork in the current feed page.');
     shadow.getElementById('ppw-filter').options[0].textContent = t('workbenchFilterAll', 'All artworks');
     shadow.getElementById('ppw-filter').options[1].textContent = t('workbenchFilterUnread', 'Unread');
     bookmarkButton.querySelector('.label').textContent = t('workbenchBookmark', 'Bookmark');
@@ -387,6 +412,7 @@
 
   function bindEvents() {
     shadow.getElementById('ppw-original').addEventListener('click', showOriginalPage);
+    loadOriginalsButton.addEventListener('click', () => preloadCurrentPageOriginals(true));
     launcher.addEventListener('click', showWorkbench);
     shadow.getElementById('ppw-work-prev').addEventListener('click', () => moveWork(-1));
     shadow.getElementById('ppw-work-next').addEventListener('click', () => moveWork(1));
@@ -525,6 +551,7 @@
     syncFeedPagination();
     applyFilter();
     if (!currentWorkId && store.size > 0) selectWork(store.all()[0].id, false);
+    if (preloadOriginalsByDefault || originalMode) scheduleAutoOriginalPreload();
   }
 
   function addThumbnail(record) {
@@ -617,7 +644,7 @@
     setViewerLoading(record);
     const version = ++requestVersion;
     try {
-      const info = await window.PixivPlusAPI.getWorkInfo(currentWorkId);
+      const info = await getWorkInfoCached(currentWorkId);
       if (version !== requestVersion || currentWorkId !== String(id)) return;
       currentInfo = info;
       const updated = store.update(id, {
@@ -691,7 +718,11 @@
     currentPage = clamp(index, 0, max);
     resetZoom();
     const page = currentInfo.pageUrls[currentPage];
-    const url = page?.regular || page?.original || currentInfo.urls.regular || currentInfo.urls.small;
+    const originalUrl = page?.original || currentInfo.urls.original || '';
+    const regularUrl = page?.regular || currentInfo.urls.regular || currentInfo.urls.small;
+    const url = originalUrl && (originalMode || preloadedOriginalUrls.has(originalUrl))
+      ? originalUrl
+      : (regularUrl || originalUrl);
     loading.hidden = false;
     error.hidden = true;
     previewImage.hidden = true;
@@ -1014,11 +1045,129 @@
     }
   }
 
+  function getWorkInfoCached(id) {
+    const key = String(id);
+    if (!workInfoCache.has(key)) {
+      const request = window.PixivPlusAPI.getWorkInfo(key).catch(fetchError => {
+        workInfoCache.delete(key);
+        throw fetchError;
+      });
+      workInfoCache.set(key, request);
+    }
+    return workInfoCache.get(key);
+  }
+
+  function scheduleAutoOriginalPreload() {
+    if ((!preloadOriginalsByDefault && !originalMode) || !workspaceVisible || store.size === 0) return;
+    clearTimeout(autoPreloadTimer);
+    autoPreloadTimer = setTimeout(() => preloadCurrentPageOriginals(false), 500);
+  }
+
+  function preloadOriginalImage(url) {
+    if (!url || preloadedOriginalUrls.has(url)) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      const timer = setTimeout(() => reject(new Error('ORIGINAL_PRELOAD_TIMEOUT')), 45000);
+      image.decoding = 'async';
+      image.onload = () => {
+        clearTimeout(timer);
+        preloadedOriginalUrls.add(url);
+        resolve();
+      };
+      image.onerror = () => {
+        clearTimeout(timer);
+        reject(new Error('ORIGINAL_PRELOAD_FAILED'));
+      };
+      image.src = url;
+    });
+  }
+
+  function updatePreloadButton(done, total, state = 'loading') {
+    if (!loadOriginalsButton) return;
+    loadOriginalsButton.classList.toggle('loading', state === 'loading');
+    loadOriginalsButton.classList.toggle('active', state === 'ready');
+    loadOriginalsButton.disabled = state === 'loading';
+    loadOriginalsButton.querySelector('span').textContent = state === 'ready' ? '✓' : '◉';
+    const label = loadOriginalsButton.querySelector('.label');
+    if (state === 'loading') {
+      label.textContent = t('workbenchOriginalsProgress', 'Originals {done}/{total}')
+        .replace('{done}', String(done)).replace('{total}', String(total));
+    } else if (state === 'ready') {
+      label.textContent = t('workbenchOriginalsReady', 'Originals ready');
+    } else {
+      label.textContent = t('workbenchLoadOriginals', 'Load page originals');
+    }
+  }
+
+  function preloadCurrentPageOriginals(manual) {
+    if (preloadRun) return preloadRun;
+    if (manual) {
+      originalMode = true;
+      failedOriginalWorkIds.clear();
+    }
+    const records = store.all().filter(record => (
+      !preloadedOriginalWorkIds.has(record.id) && !failedOriginalWorkIds.has(record.id)
+    ));
+    if (!records.length) {
+      updatePreloadButton(0, 0, 'ready');
+      if (currentInfo && originalMode) showPage(currentPage);
+      return Promise.resolve();
+    }
+
+    const total = records.length;
+    let cursor = 0;
+    let finished = 0;
+    let failed = 0;
+    updatePreloadButton(0, total, 'loading');
+
+    preloadRun = (async () => {
+      const worker = async () => {
+        while (cursor < records.length) {
+          const record = records[cursor++];
+          try {
+            const info = await getWorkInfoCached(record.id);
+            const originalUrl = info.pageUrls?.[0]?.original || info.urls?.original || '';
+            if (!originalUrl) throw new Error('ORIGINAL_URL_MISSING');
+            await preloadOriginalImage(originalUrl);
+            preloadedOriginalWorkIds.add(record.id);
+            const updated = store.update(record.id, {
+              title: info.title,
+              artist: info.artist,
+              thumbUrl: info.urls.small || info.urls.regular || record.thumbUrl,
+              pageCount: info.pageCount,
+              isUgoira: info.isUgoira,
+              loaded: true
+            });
+            updateThumbnail(updated);
+          } catch (preloadError) {
+            failed++;
+            failedOriginalWorkIds.add(record.id);
+            console.warn('[PixivPlus] Original preload failed', record.id, preloadError);
+          } finally {
+            finished++;
+            updatePreloadButton(finished, total, 'loading');
+          }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(3, total) }, worker));
+    })().finally(() => {
+      preloadRun = null;
+      updatePreloadButton(finished, total, failed === total ? 'idle' : 'ready');
+      if (currentInfo && originalMode) showPage(currentPage);
+      const message = failed
+        ? t('workbenchOriginalsPartial', '{count} originals could not be loaded').replace('{count}', String(failed))
+        : t('workbenchOriginalsReady', 'Originals ready');
+      showToast(message);
+      if (preloadOriginalsByDefault || originalMode) scheduleAutoOriginalPreload();
+    });
+    return preloadRun;
+  }
+
   function prefetchNext() {
     const index = store.indexOf(currentWorkId);
     const next = store.all()[index + 1];
     if (!next || next.loaded) return;
-    const prefetch = () => window.PixivPlusAPI.getWorkInfo(next.id).then(info => {
+    const prefetch = () => getWorkInfoCached(next.id).then(info => {
       const updated = store.update(next.id, {
         title: info.title, artist: info.artist,
         thumbUrl: info.urls.small || info.urls.regular || next.thumbUrl,

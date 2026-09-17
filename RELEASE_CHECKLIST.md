@@ -14,11 +14,12 @@
 - [ ] Verify the following-feed workbench discovers newly appended Pixiv cards and can return to the original page.
 - [ ] Verify work navigation, page navigation, zoom, pan, focus mode, unread filtering, and density changes.
 - [ ] Verify Shift range selection and batch downloads from the workbench.
+- [ ] Verify manual and automatic current-feed original-image preloading.
 - [ ] Verify a single-page JPEG and PNG preview/download.
 - [ ] Verify a multi-page work with mixed page selection and Shift range selection.
 - [ ] Verify Ugoira ZIP and frame timing JSON downloads.
 - [ ] Verify cancel, cancel all, pause/resume queue, failed retry, and all duplicate policies.
-- [ ] Verify browser-default download fallback after dismissing the directory picker.
+- [ ] Verify dismissing the directory picker queues no download and starts no network transfer.
 - [ ] Verify settings persist after browser restart.
 - [ ] Verify English and Simplified Chinese UI.
 - [ ] Verify keyboard navigation, focus trapping, and reduced-motion mode.

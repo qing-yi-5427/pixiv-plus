@@ -14,6 +14,10 @@
 - Changed artwork bookmarks to prefer Pixiv's native in-page control, with a CSRF-compatible AJAX fallback and no legacy bookmark tab.
 - Replaced the feed page-number stepper with a centered numeric field without spinner arrows.
 - Stopped downloads before queuing or fetching when no download folder is authorized.
+- Persisted workbench read state across feed pages and browser restarts.
+- Moved artwork metadata into an adaptive image-anchored information island.
+- Integrated active download progress into the workbench shortcut bar.
+- Added one-click current-feed original-image preloading and an optional automatic preload preference.
 
 ## 2.0.0 - 2026-09-16
 
