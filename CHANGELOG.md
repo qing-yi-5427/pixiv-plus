@@ -8,7 +8,7 @@
 - Added range selection and batch original-file downloads.
 - Preserved the native Pixiv page behind the workbench with a one-click fallback.
 - Added English and Simplified Chinese workbench UI and a dedicated settings switch.
-- Fixed split-view height containment so long feeds scroll independently and previews remain visible.
+- Fixed split-view sizing so long feeds keep square thumbnails, scroll independently, and leave previews visible.
 
 ## 2.0.0 - 2026-09-16
 
