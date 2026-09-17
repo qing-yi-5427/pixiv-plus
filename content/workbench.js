@@ -154,8 +154,8 @@
       .ppw-button.primary:hover { filter:brightness(.96); }
       .ppw-button.active { border-color:var(--ppw-blue);color:var(--ppw-blue);background:var(--ppw-blue-soft); }
       .ppw-select { padding:0 30px 0 10px; }
-      .ppw-body { min-height:0;flex:1;display:grid;grid-template-columns:var(--ppw-left-width) 5px minmax(0,1fr); }
-      .ppw-browser { min-width:0;display:flex;flex-direction:column;background:var(--ppw-surface); }
+      .ppw-body { min-height:0;overflow:hidden;flex:1;display:grid;grid-template-columns:var(--ppw-left-width) 5px minmax(0,1fr);grid-template-rows:minmax(0,1fr); }
+      .ppw-browser { min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column;background:var(--ppw-surface); }
       .ppw-browser-head { height:52px;flex:0 0 52px;display:flex;align-items:center;gap:8px;padding:0 11px;border-bottom:1px solid var(--ppw-line); }
       .ppw-browser-head strong { font-weight:600; }
       .ppw-count { color:var(--ppw-muted);margin-right:auto; }
