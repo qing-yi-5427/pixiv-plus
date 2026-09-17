@@ -74,7 +74,7 @@
   // picker does not spend the short user-activation window on IndexedDB.
   dirHandleLoad = loadDirHandle().then(handle => {
     dirHandle = handle;
-    window.PixivPlusDownloadPanel?.setFolderName(handle?.name || 'browser default');
+    window.PixivPlusDownloadPanel?.setFolderName(handle?.name || 'not selected');
     return handle;
   }).catch(() => null);
 
@@ -277,7 +277,13 @@
       ? options.dirHandle
       : await getDirHandle(options.promptForDir !== false);
 
-    if (policy === 'rename' && handle) {
+    if (!handle) {
+      panel?.showToast('Choose a download folder before downloading', 'warning');
+      updateThumbnailState(meta?.workId, 'idle');
+      return false;
+    }
+
+    if (policy === 'rename') {
       filename = await getAvailableFilename(handle, filename);
     }
     if (reservedFilenames.has(filename)) {
@@ -376,27 +382,13 @@
         outputBlob = await injectTags(blob, tags);
       }
 
-      if (handle) {
-        await writeFile(handle, filename, outputBlob, job.duplicatePolicy);
-        if (job.companion) {
-          await writeFile(
-            handle,
-            job.companion.filename,
-            new Blob([job.companion.text], { type: job.companion.type || 'application/json' }),
-            job.duplicatePolicy
-          );
-        }
-        panel.updateDownload({ filename, state: 'complete' });
-        failedDownloads.delete(filename);
-        updateThumbnailState(meta.workId, 'complete');
-        return;
-      }
-
-      await browserDownload(outputBlob, filename);
+      await writeFile(handle, filename, outputBlob, job.duplicatePolicy);
       if (job.companion) {
-        await browserDownload(
+        await writeFile(
+          handle,
+          job.companion.filename,
           new Blob([job.companion.text], { type: job.companion.type || 'application/json' }),
-          job.companion.filename
+          job.duplicatePolicy
         );
       }
       panel.updateDownload({ filename, state: 'complete' });
@@ -471,6 +463,7 @@
     // Ask for the directory while this function is still handling the user's
     // click; file pickers require transient user activation.
     const handle = await getDirHandle(true);
+    if (!handle) return false;
     try {
       const info = await window.PixivPlusAPI.getWorkInfo(workId);
       if (info.isUgoira) {
@@ -519,6 +512,7 @@
     if (!info) return;
     try {
       const handle = await getDirHandle(true);
+      if (!handle) return false;
       if (info.isUgoira) {
         await downloadUgoiraWork(info, handle);
         return;
@@ -533,6 +527,7 @@
     const ids = [...new Set((workIds || []).map(String).filter(id => /^\d+$/.test(id)))];
     if (ids.length === 0) return;
     const handle = await getDirHandle(true);
+    if (!handle) return false;
     for (const workId of ids) {
       try {
         const info = await window.PixivPlusAPI.getWorkInfo(workId);
@@ -546,6 +541,7 @@
 
   async function downloadUgoiraWork(info, preparedHandle = undefined) {
     const handle = preparedHandle === undefined ? await getDirHandle(true) : preparedHandle;
+    if (!handle) return false;
     const ugoira = await window.PixivPlusAPI.getUgoiraMeta(info.id);
     if (!ugoira.zipUrl) throw new Error('Ugoira ZIP unavailable');
     const imageFilename = window.PixivPlusAPI.generateFilename(info, 0);
@@ -605,18 +601,6 @@
     }
   }
 
-  async function browserDownload(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    a.style.display = 'none';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
-  }
-
   // --- Popup messages (getDirInfo, resetDir) ---
 
   chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -634,7 +618,7 @@
     if (msg.type === 'resetDir') {
       dirHandle = null;
       dirHandleLoad = Promise.resolve(null);
-      window.PixivPlusDownloadPanel?.setFolderName('browser default');
+      window.PixivPlusDownloadPanel?.setFolderName('not selected');
       openDB().then(db => {
         const tx = db.transaction('handles', 'readwrite');
         tx.objectStore('handles').delete('downloadDir');
@@ -768,6 +752,7 @@
       const selected = checkboxes.filter(c => c.checked).map(c => parseInt(c.dataset.index));
       if (selected.length === 0) return;
       const handle = preparedHandle === undefined ? await getDirHandle(true) : preparedHandle;
+      if (!handle) return;
       queuePages(info, selected, handle);
       container.classList.remove('visible');
     };

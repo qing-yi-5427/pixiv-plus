@@ -33,3 +33,18 @@ test('thumbnail rows keep a square intrinsic size instead of collapsing into the
   assert.match(thumbnailImageRule, /aspect-ratio:1\/1/);
   assert.doesNotMatch(thumbnailImageRule, /position:absolute/);
 });
+
+test('workbench exposes feed pagination and a visible return launcher', () => {
+  assert.match(source, /id="ppw-feed-prev"/);
+  assert.match(source, /id="ppw-feed-page" type="number"/);
+  assert.match(source, /id="ppw-feed-next"/);
+  assert.match(source, /function navigateFeedPage\(page\)[\s\S]*?location\.assign\(url\.href\)/);
+  assert.match(source, /\.ppw-launcher \{[^}]*top:74px[^}]*pointer-events:auto/);
+  assert.match(source, /launcher\.hidden = false/);
+});
+
+test('workbench bookmarks through Pixiv AJAX helpers and never opens the legacy form', () => {
+  assert.match(source, /PixivPlusAPI\.bookmarkWork\(currentWorkId\)/);
+  assert.match(source, /PixivPlusAPI\.unbookmarkWork\(currentWorkId, currentInfo\.bookmarkId\)/);
+  assert.doesNotMatch(source, /bookmark_add\.php/);
+});

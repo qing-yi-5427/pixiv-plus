@@ -7,7 +7,6 @@
   const ROUTE = '/bookmark_new_illust.php';
   const model = window.PixivPlusWorkbenchModel;
   const store = model.createStore();
-  const sourceCards = new Map();
   const thumbElements = new Map();
   const seenWorkIds = new Set();
   const batchSelection = new Set();
@@ -27,6 +26,9 @@
   let facts = null;
   let tags = null;
   let pageLabel = null;
+  let feedPageInput = null;
+  let feedPrevButton = null;
+  let feedNextButton = null;
   let downloadCurrentButton = null;
   let downloadAllButton = null;
   let bookmarkButton = null;
@@ -178,6 +180,10 @@
       .batch .ppw-check { display:grid; }
       .batch .ppw-unread { display:none; }
       .ppw-thumb.batch-selected .ppw-check { background:var(--ppw-success);border-color:var(--ppw-success); }
+      .ppw-feed-pager { height:46px;flex:0 0 46px;display:flex;align-items:center;justify-content:center;gap:7px;padding:6px 9px;border-top:1px solid var(--ppw-line);background:var(--ppw-surface); }
+      .ppw-feed-page-label { display:flex;align-items:center;gap:5px;color:var(--ppw-muted);font-size:12px;white-space:nowrap; }
+      .ppw-feed-page-input { width:48px;height:32px;padding:0 5px;border:1px solid var(--ppw-line);border-radius:7px;background:var(--ppw-surface);color:var(--ppw-text);text-align:center;font:inherit;font-variant-numeric:tabular-nums; }
+      .ppw-feed-page-input:focus { outline:2px solid var(--ppw-blue-soft);border-color:var(--ppw-blue); }
       .ppw-resizer { background:var(--ppw-line);cursor:col-resize;position:relative; }
       .ppw-resizer:hover::after, .ppw-resizer.dragging::after { content:"";position:absolute;inset:0 -2px;background:var(--ppw-blue); }
       .ppw-viewer { min-width:0;min-height:0;display:flex;flex-direction:column;position:relative;background:var(--ppw-bg); }
@@ -207,7 +213,8 @@
       .ppw-toast[hidden] { display:none; }
       .ppw-batch-bar { position:absolute;left:50%;bottom:108px;translate:-50% 0;display:flex;align-items:center;gap:8px;padding:7px;border:1px solid var(--ppw-line);border-radius:11px;background:var(--ppw-surface);box-shadow:0 10px 32px rgb(0 0 0/.24);z-index:4; }
       .ppw-batch-bar[hidden] { display:none; }
-      .ppw-launcher { position:absolute;right:20px;bottom:20px;pointer-events:auto;border:0;border-radius:999px;padding:11px 16px;background:#0096fa;color:#fff;box-shadow:0 8px 30px rgb(0 0 0/.28);cursor:pointer;font:600 14px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+      .ppw-launcher { position:absolute;right:20px;top:74px;pointer-events:auto;border:1px solid rgb(255 255 255/.65);border-radius:999px;padding:11px 16px;background:#0096fa;color:#fff;box-shadow:0 8px 30px rgb(0 0 0/.3);cursor:pointer;font:600 14px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+      .ppw-launcher:hover { filter:brightness(.96);transform:translateY(-1px); }
       .focus .ppw-topbar, .focus .ppw-browser, .focus .ppw-resizer, .focus .ppw-details, .focus .ppw-shortcuts { display:none; }
       .focus .ppw-body { grid-template-columns:1fr; }
       .focus .ppw-view-head { background:var(--ppw-surface); }
@@ -250,6 +257,11 @@
             <button class="ppw-icon-button" id="ppw-batch-toggle" type="button" aria-label="Select multiple artworks">☑</button>
           </div>
           <div class="ppw-feed" id="ppw-feed"><div class="ppw-empty" id="ppw-empty"></div></div>
+          <nav class="ppw-feed-pager" aria-label="Feed pagination">
+            <button class="ppw-icon-button" id="ppw-feed-prev" type="button">‹</button>
+            <label class="ppw-feed-page-label"><span id="ppw-feed-page-prefix"></span><input class="ppw-feed-page-input" id="ppw-feed-page" type="number" min="1" step="1"><span id="ppw-feed-page-suffix"></span></label>
+            <button class="ppw-icon-button" id="ppw-feed-next" type="button">›</button>
+          </nav>
         </aside>
         <div class="ppw-resizer" id="ppw-resizer" role="separator" aria-label="Resize thumbnail browser"></div>
         <main class="ppw-viewer">
@@ -310,6 +322,9 @@
     facts = shadow.getElementById('ppw-facts');
     tags = shadow.getElementById('ppw-tags');
     pageLabel = shadow.getElementById('ppw-page-label');
+    feedPageInput = shadow.getElementById('ppw-feed-page');
+    feedPrevButton = shadow.getElementById('ppw-feed-prev');
+    feedNextButton = shadow.getElementById('ppw-feed-next');
     downloadCurrentButton = shadow.getElementById('ppw-download-current');
     downloadAllButton = shadow.getElementById('ppw-download-all');
     bookmarkButton = shadow.getElementById('ppw-bookmark');
@@ -331,7 +346,12 @@
     shadow.getElementById('ppw-batch-download').textContent = t('workbenchDownloadSelected', 'Download selected');
     shadow.getElementById('ppw-batch-cancel').textContent = t('workbenchCancelSelection', 'Cancel');
     emptyState.textContent = t('workbenchLoadingFeed', 'Waiting for artworks from the Pixiv feed…');
-    launcher.textContent = t('workbenchOpenWorkbench', 'Open PixivPlus Workbench');
+    launcher.textContent = `✦ ${t('workbenchOpenWorkbench', 'Return to PixivPlus Workbench')}`;
+    launcher.setAttribute('aria-label', t('workbenchOpenWorkbench', 'Return to PixivPlus Workbench'));
+    shadow.getElementById('ppw-feed-page-prefix').textContent = t('workbenchFeedPage', 'Page');
+    shadow.getElementById('ppw-feed-page-suffix').textContent = t('workbenchFeedPageSuffix', '');
+    feedPrevButton.setAttribute('aria-label', t('workbenchPreviousFeedPage', 'Previous feed page'));
+    feedNextButton.setAttribute('aria-label', t('workbenchNextFeedPage', 'Next feed page'));
     shadow.getElementById('ppw-shortcut-work').textContent = t('workbenchShortcutWork', 'artwork');
     shadow.getElementById('ppw-shortcut-page').textContent = t('workbenchShortcutPage', 'page');
     shadow.getElementById('ppw-shortcut-download').textContent = t('workbenchShortcutDownload', 'download');
@@ -344,6 +364,15 @@
     launcher.addEventListener('click', showWorkbench);
     shadow.getElementById('ppw-work-prev').addEventListener('click', () => moveWork(-1));
     shadow.getElementById('ppw-work-next').addEventListener('click', () => moveWork(1));
+    feedPrevButton.addEventListener('click', () => navigateFeedPage(currentFeedPage() - 1));
+    feedNextButton.addEventListener('click', () => navigateFeedPage(currentFeedPage() + 1));
+    feedPageInput.addEventListener('change', navigateToEnteredFeedPage);
+    feedPageInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        navigateToEnteredFeedPage();
+      }
+    });
     shadow.getElementById('ppw-page-prev').addEventListener('click', () => showPage(currentPage - 1));
     shadow.getElementById('ppw-page-next').addEventListener('click', () => showPage(currentPage + 1));
     shadow.getElementById('ppw-open').addEventListener('click', openCurrentWork);
@@ -376,6 +405,7 @@
     shell.hidden = false;
     shell.dataset.userCollapsed = '';
     launcher.hidden = true;
+    syncFeedPagination();
     scheduleScan();
   }
 
@@ -387,6 +417,36 @@
     shell.dataset.userCollapsed = 'true';
     launcher.hidden = false;
     window.scrollTo({ top: nativeScrollBeforeWorkbench, behavior: 'auto' });
+  }
+
+  function currentFeedPage() {
+    const value = Number(new URL(location.href).searchParams.get('p'));
+    return Number.isInteger(value) && value > 0 ? value : 1;
+  }
+
+  function syncFeedPagination() {
+    if (!feedPageInput) return;
+    const page = currentFeedPage();
+    feedPageInput.value = String(page);
+    feedPrevButton.disabled = page <= 1;
+    feedNextButton.disabled = store.size === 0;
+  }
+
+  function navigateToEnteredFeedPage() {
+    const page = Math.max(1, Math.floor(Number(feedPageInput.value) || currentFeedPage()));
+    navigateFeedPage(page);
+  }
+
+  function navigateFeedPage(page) {
+    const nextPage = Math.max(1, Math.floor(Number(page) || 1));
+    if (nextPage === currentFeedPage()) {
+      feedPageInput.value = String(nextPage);
+      return;
+    }
+    const url = new URL(location.href);
+    if (nextPage === 1) url.searchParams.delete('p');
+    else url.searchParams.set('p', String(nextPage));
+    location.assign(url.href);
   }
 
   function deactivate() {
@@ -416,13 +476,13 @@
       const titleText = image?.alt || link.getAttribute('aria-label') || '';
       const thumbUrl = image?.currentSrc || image?.src || image?.dataset?.src || '';
       discovered.push({ id, title: titleText, artist: userLink?.textContent?.trim() || '', thumbUrl });
-      if (!sourceCards.has(id) || card.querySelector?.('button')) sourceCards.set(id, card);
     }
 
     const changes = store.merge(discovered);
     for (const record of changes.added) addThumbnail(record);
     for (const record of changes.updated) updateThumbnail(record);
     updateCounts();
+    syncFeedPagination();
     applyFilter();
     if (!currentWorkId && store.size > 0) selectWork(store.all()[0].id, false);
   }
@@ -565,6 +625,7 @@
     title.textContent = currentInfo.title;
     artist.textContent = (currentInfo.artist || 'P').slice(0, 1).toUpperCase();
     bookmarkButton.classList.toggle('active', Boolean(currentInfo.isBookmarked));
+    bookmarkButton.querySelector('span').textContent = currentInfo.isBookmarked ? '♥' : '♡';
     bookmarkButton.querySelector('.label').textContent = currentInfo.isBookmarked
       ? t('workbenchBookmarked', 'Bookmarked')
       : t('workbenchBookmark', 'Bookmark');
@@ -628,20 +689,27 @@
     if (currentWorkId) window.open(`https://www.pixiv.net/artworks/${currentWorkId}`, '_blank', 'noopener');
   }
 
-  function bookmarkCurrentWork() {
-    if (!currentWorkId) return;
-    const card = sourceCards.get(currentWorkId);
-    const nativeButton = card?.querySelector?.(
-      'button[data-click-label="bookmark"], button[aria-label*="bookmark" i], button[aria-label*="Like" i], button[aria-label*="ブックマーク"], button[aria-label*="收藏"]'
-    );
-    if (nativeButton) {
-      nativeButton.click();
-      if (currentInfo) currentInfo.isBookmarked = !currentInfo.isBookmarked;
+  async function bookmarkCurrentWork() {
+    if (!currentWorkId || !currentInfo || bookmarkButton.disabled) return;
+    bookmarkButton.disabled = true;
+    try {
+      if (currentInfo.isBookmarked) {
+        await window.PixivPlusAPI.unbookmarkWork(currentWorkId, currentInfo.bookmarkId);
+        currentInfo.isBookmarked = false;
+        currentInfo.bookmarkId = '';
+      } else {
+        const result = await window.PixivPlusAPI.bookmarkWork(currentWorkId);
+        currentInfo.isBookmarked = true;
+        currentInfo.bookmarkId = result.bookmarkId || currentInfo.bookmarkId || '';
+      }
       renderInfo();
       showToast(t('workbenchBookmarkUpdated', 'Bookmark updated'));
-      return;
+    } catch (bookmarkError) {
+      console.warn('[PixivPlus] Bookmark update failed', bookmarkError);
+      showToast(t('workbenchBookmarkFailed', 'Could not update bookmark'));
+    } finally {
+      bookmarkButton.disabled = false;
     }
-    window.open(`https://www.pixiv.net/bookmark_add.php?type=illust&illust_id=${currentWorkId}`, '_blank', 'noopener');
   }
 
   function downloadCurrentPage() {

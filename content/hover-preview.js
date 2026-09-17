@@ -294,6 +294,8 @@
       .pp-sidebar-btn.pp-follow-btn.pp-follow-active:hover {
         color: #5E6AD2;
       }
+      .pp-sidebar-btn.pp-bookmark-active { color:#ff4f72; }
+      .pp-sidebar-btn.pp-bookmark-active svg { fill:currentColor; }
 
       .pp-avatar-btn {
         display: flex;
@@ -762,15 +764,33 @@
     panel?.focus({ preventScroll: true });
   }
 
-  function bookmarkCurrent() {
-    if (!currentWorkId) return;
-    const card = currentTriggerEl?.closest('li, section') || currentTriggerEl?.parentElement;
-    const btn = card?.querySelector('button[data-click-label="bookmark"], button[aria-label*="bookmark" i], button[aria-label*="ブックマーク"]');
-    if (btn) {
-      btn.click();
-      window.PixivPlusDownloadPanel?.showToast('Bookmarked!', 'success');
-    } else {
-      window.open(`https://www.pixiv.net/bookmark_add.php?type=illust&illust_id=${currentWorkId}`, '_blank');
+  function updateBookmarkState(isBookmarked) {
+    if (!btnBookmark) return;
+    btnBookmark.classList.toggle('pp-bookmark-active', Boolean(isBookmarked));
+    btnBookmark.title = isBookmarked ? 'Bookmarked' : 'Bookmark';
+    btnBookmark.setAttribute('aria-label', btnBookmark.title);
+  }
+
+  async function bookmarkCurrent() {
+    if (!currentWorkId || !currentInfo || btnBookmark.classList.contains('disabled')) return;
+    btnBookmark.classList.add('disabled');
+    try {
+      if (currentInfo.isBookmarked) {
+        await window.PixivPlusAPI.unbookmarkWork(currentWorkId, currentInfo.bookmarkId);
+        currentInfo.isBookmarked = false;
+        currentInfo.bookmarkId = '';
+      } else {
+        const result = await window.PixivPlusAPI.bookmarkWork(currentWorkId);
+        currentInfo.isBookmarked = true;
+        currentInfo.bookmarkId = result.bookmarkId || currentInfo.bookmarkId || '';
+      }
+      updateBookmarkState(currentInfo.isBookmarked);
+      window.PixivPlusDownloadPanel?.showToast(currentInfo.isBookmarked ? 'Bookmarked!' : 'Bookmark removed', 'success');
+    } catch (bookmarkError) {
+      console.warn('[PixivPlus] Bookmark update failed', bookmarkError);
+      window.PixivPlusDownloadPanel?.showToast('Could not update bookmark', 'error');
+    } finally {
+      btnBookmark.classList.remove('disabled');
     }
   }
 
@@ -1035,6 +1055,7 @@
       if (currentWorkId !== workId) return;
 
       currentInfo = info;
+      updateBookmarkState(info.isBookmarked);
 
       const url = info.isUgoira
         ? (info.urls.regular || info.urls.small || info.pageUrls[0]?.regular)

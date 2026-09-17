@@ -17,14 +17,19 @@ function response(body, status = 200) {
   };
 }
 
-function loadApi(fetchImpl, settings = {}) {
+function loadApi(fetchImpl, settings = {}, csrfToken = '') {
   const storage = {
     filenameTemplate: '{artist}-{title}-{id}',
     ...settings
   };
   const context = {
     window: {},
-    document: { querySelector: () => null, cookie: '' },
+    document: {
+      querySelector: selector => selector === '#meta-global-data' && csrfToken
+        ? { getAttribute: () => JSON.stringify({ token: csrfToken }) }
+        : null,
+      cookie: ''
+    },
     chrome: {
       storage: {
         local: { get: (_defaults, callback) => callback(storage) },
@@ -151,4 +156,25 @@ test('ugoira metadata exposes the source ZIP and frame timing', async () => {
   const result = await api.getUgoiraMeta('42');
   assert.equal(result.zipUrl, 'https://i.pximg.net/ugoira/42.zip');
   assert.deepEqual(JSON.parse(JSON.stringify(result.frames)), [{ file: '000000.jpg', delay: 60 }]);
+});
+
+test('bookmark actions use Pixiv AJAX endpoints without opening another page', async () => {
+  const calls = [];
+  const api = loadApi(async (url, options) => {
+    calls.push({ url, options });
+    if (url.endsWith('/add')) return response({ error: false, body: { last_bookmark_id: '99' } });
+    return response({ error: false, body: {} });
+  }, {}, 'csrf-token');
+
+  const added = await api.bookmarkWork('42');
+  await api.unbookmarkWork('42', added.bookmarkId);
+
+  assert.equal(added.bookmarkId, '99');
+  assert.equal(calls[0].url, '/ajax/illusts/bookmarks/add');
+  assert.equal(calls[0].options.headers['x-csrf-token'], 'csrf-token');
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    illust_id: '42', restrict: 0, comment: '', tags: []
+  });
+  assert.equal(calls[1].url, '/ajax/illusts/bookmarks/delete');
+  assert.deepEqual(JSON.parse(calls[1].options.body), { bookmark_id: '99' });
 });

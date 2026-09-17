@@ -357,7 +357,7 @@
       </div>
       <div class="pp-panel-body" id="pp-panel-body"></div>
       <div class="pp-panel-footer">
-        <button id="pp-choose-folder" title="Choose download folder">Folder: browser default</button>
+        <button id="pp-choose-folder" title="Choose download folder">Folder: not selected</button>
         <button id="pp-show-more" class="pp-show-more" style="display:none;">Show More</button>
         <button id="pp-panel-clear">Clear</button>
       </div>
@@ -659,7 +659,7 @@
 
   function setFolderName(name) {
     const button = panelHost?.shadowRoot?.getElementById('pp-choose-folder');
-    if (button) button.textContent = `Folder: ${name || 'browser default'}`;
+    if (button) button.textContent = `Folder: ${name || 'not selected'}`;
   }
 
   function showHistoryModal(shadow) {

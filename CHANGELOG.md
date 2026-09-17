@@ -9,6 +9,10 @@
 - Preserved the native Pixiv page behind the workbench with a one-click fallback.
 - Added English and Simplified Chinese workbench UI and a dedicated settings switch.
 - Fixed split-view sizing so long feeds keep square thumbnails, scroll independently, and leave previews visible.
+- Added previous, next, and direct page-number controls to the artwork feed.
+- Added a prominent floating button for returning to the workbench from Pixiv's original page.
+- Changed artwork bookmarks to use Pixiv's in-page AJAX action without opening a legacy bookmark tab.
+- Stopped downloads before queuing or fetching when no download folder is authorized.
 
 ## 2.0.0 - 2026-09-16
 
