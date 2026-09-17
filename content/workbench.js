@@ -27,6 +27,7 @@
   let artist = null;
   let facts = null;
   let tags = null;
+  let details = null;
   let pageLabel = null;
   let feedPageInput = null;
   let feedPrevButton = null;
@@ -53,6 +54,7 @@
   let panX = 0;
   let panY = 0;
   let pointerStart = null;
+  let infoPositionQueued = false;
 
   const t = (key, fallback) => chrome.i18n.getMessage(key) || fallback;
 
@@ -197,8 +199,7 @@
       .ppw-viewer { min-width:0;min-height:0;display:flex;flex-direction:column;position:relative;background:var(--ppw-bg); }
       .ppw-view-head { height:52px;flex:0 0 52px;display:flex;align-items:center;gap:7px;padding:0 12px;background:var(--ppw-surface);border-bottom:1px solid var(--ppw-line); }
       .ppw-current-title { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;margin-right:auto; }
-      .ppw-stage { position:relative;min-height:0;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:26px 54px;background:radial-gradient(circle at center,var(--ppw-surface),var(--ppw-bg) 75%);touch-action:none;transition:padding .22s ease; }
-      .ppw-shell[data-image-orientation="portrait"] .ppw-stage { padding-right:300px; }
+      .ppw-stage { position:relative;min-height:0;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:26px 54px;background:radial-gradient(circle at center,var(--ppw-surface),var(--ppw-bg) 75%);touch-action:none; }
       .ppw-image { display:block;max-width:100%;max-height:100%;object-fit:contain;transform-origin:center;user-select:none;-webkit-user-drag:none;box-shadow:0 18px 48px rgb(0 0 0/.22); }
       .ppw-image[hidden] { display:none; }
       .ppw-loading, .ppw-error { position:absolute;inset:0;display:grid;place-items:center;color:var(--ppw-muted);text-align:center;padding:30px; }
@@ -212,19 +213,22 @@
       .ppw-page-label { min-width:52px;text-align:center;color:var(--ppw-muted);font-variant-numeric:tabular-nums; }
       .ppw-zoom { position:absolute;right:12px;bottom:12px;display:flex;gap:4px;padding:4px;border-radius:9px;background:var(--ppw-surface);box-shadow:0 6px 18px rgb(0 0 0/.16); }
       .ppw-details {
-        position:absolute;z-index:3;top:70px;right:18px;width:250px;min-height:0;display:grid;
-        grid-template-columns:36px minmax(0,1fr);align-items:center;gap:10px;padding:11px;
-        border:1px solid color-mix(in srgb,var(--ppw-line) 72%,transparent);border-radius:16px;
-        background:color-mix(in srgb,var(--ppw-surface) 78%,transparent);
-        box-shadow:0 14px 38px rgb(20 28 40/.16),inset 0 1px 0 rgb(255 255 255/.34);
-        backdrop-filter:blur(22px) saturate(1.35);-webkit-backdrop-filter:blur(22px) saturate(1.35);
+        position:absolute;z-index:3;min-height:0;display:grid;grid-template-columns:32px minmax(0,1fr);
+        align-items:center;gap:8px;padding:9px;border:1px solid color-mix(in srgb,var(--ppw-line) 68%,transparent);
+        border-radius:12px;background:color-mix(in srgb,var(--ppw-surface) 72%,transparent);
+        box-shadow:0 8px 24px rgb(20 28 40/.1),inset 0 1px 0 rgb(255 255 255/.26);
+        backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);
+        opacity:.78;transition:opacity .16s ease,background .16s ease,box-shadow .16s ease;
       }
-      .ppw-shell[data-image-orientation="landscape"] .ppw-details { top:auto;right:auto;left:18px;bottom:47px;width:min(600px,calc(100% - 36px));grid-template-columns:36px minmax(160px,1fr) minmax(0,auto); }
-      .ppw-avatar { width:36px;height:36px;flex:0 0 auto;border-radius:12px;display:grid;place-items:center;background:var(--ppw-blue-soft);color:var(--ppw-blue);font-weight:700; }
+      .ppw-details:hover,.ppw-details:focus-within { opacity:1;background:color-mix(in srgb,var(--ppw-surface) 88%,transparent);box-shadow:0 10px 30px rgb(20 28 40/.15); }
+      .ppw-details[data-placement="bottom"] { grid-template-columns:32px minmax(130px,1fr) auto; }
+      .ppw-details[data-overlay="true"] { background:color-mix(in srgb,var(--ppw-surface) 86%,transparent); }
+      .ppw-avatar { width:32px;height:32px;flex:0 0 auto;border-radius:10px;display:grid;place-items:center;background:var(--ppw-blue-soft);color:var(--ppw-blue);font-weight:700; }
       .ppw-identity { min-width:0; }.ppw-title { font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }.ppw-facts { margin-top:2px;color:var(--ppw-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px; }
       .ppw-tags { grid-column:1/-1;display:flex;justify-content:flex-start;gap:5px;flex-wrap:wrap;max-width:none;padding-top:2px; }
-      .ppw-shell[data-image-orientation="landscape"] .ppw-tags { grid-column:auto;justify-content:flex-end;flex-wrap:nowrap;overflow:hidden;padding-top:0; }
-      .ppw-tag { padding:3px 7px;border-radius:999px;background:var(--ppw-soft);color:var(--ppw-muted);font-size:12px; }
+      .ppw-details[data-placement="bottom"] .ppw-tags { grid-column:auto;justify-content:flex-end;flex-wrap:nowrap;overflow:hidden;padding-top:0; }
+      .ppw-tag { padding:3px 7px;border-radius:999px;background:var(--ppw-soft);color:var(--ppw-muted);font-size:11px;white-space:nowrap; }
+      .ppw-tag.extra { display:none; }.ppw-details:hover .ppw-tag.extra { display:inline-flex; }.ppw-details:hover .ppw-tag.more { display:none; }
       .ppw-shortcuts { flex:0 0 31px;display:flex;align-items:center;gap:13px;padding:0 420px 0 15px;background:var(--ppw-surface);border-top:1px solid var(--ppw-line);color:var(--ppw-muted);font-size:12px;white-space:nowrap;overflow:hidden; }
       kbd { min-width:20px;padding:1px 4px;border:1px solid var(--ppw-line);border-radius:5px;background:var(--ppw-soft);color:var(--ppw-text);text-align:center;box-shadow:0 1px 0 var(--ppw-line); }
       .ppw-toast { position:absolute;left:50%;bottom:112px;translate:-50% 0;padding:9px 13px;border-radius:9px;background:var(--ppw-surface);box-shadow:0 8px 28px rgb(0 0 0/.24);color:var(--ppw-text);z-index:5; }
@@ -237,21 +241,17 @@
       .focus .ppw-body { grid-template-columns:1fr; }
       .focus .ppw-view-head { background:var(--ppw-surface); }
       @media (max-width:900px) {
-        .ppw-summary,.ppw-shortcuts > span:nth-child(n+3),.ppw-details .ppw-tags,.ppw-button .label { display:none; }
+        .ppw-summary,.ppw-shortcuts > span:nth-child(n+3),.ppw-button .label { display:none; }
         .ppw-body { grid-template-columns:116px 0 minmax(0,1fr); }
         .ppw-resizer { display:none; }
         .ppw-feed { padding:7px; }
         .ppw-thumb { flex-basis:100%!important; }
         .ppw-browser-head strong,.ppw-browser-head .ppw-count,.ppw-browser-head .density { display:none; }
         .ppw-browser-head { justify-content:center; }
-        .ppw-stage,.ppw-shell[data-image-orientation="portrait"] .ppw-stage { padding:18px 225px 18px 43px; }
-        .ppw-details,.ppw-shell[data-image-orientation="landscape"] .ppw-details { top:64px;right:10px;bottom:auto;left:auto;width:202px;grid-template-columns:32px minmax(0,1fr);padding:9px;border-radius:14px; }
-        .ppw-avatar { width:32px;height:32px;border-radius:10px; }
-        .ppw-tags { display:none; }
+        .ppw-stage { padding:18px 43px; }
       }
       @media (max-width:640px) {
-        .ppw-stage,.ppw-shell[data-image-orientation="portrait"] .ppw-stage { padding:14px 42px; }
-        .ppw-details,.ppw-shell[data-image-orientation="landscape"] .ppw-details { top:auto;right:10px;bottom:42px;left:10px;width:auto; }
+        .ppw-stage { padding:14px 42px; }
         .ppw-shortcuts { padding-right:330px; }
       }
       @media (prefers-reduced-motion:reduce) { .ppw-spinner { animation:none; } * { scroll-behavior:auto!important;transition:none!important; } }
@@ -313,6 +313,11 @@
               <button class="ppw-icon-button" id="ppw-zoom-reset" type="button" aria-label="Reset zoom">⌗</button>
               <button class="ppw-icon-button" id="ppw-zoom-in" type="button" aria-label="Zoom in">＋</button>
             </div>
+            <section class="ppw-details" id="ppw-details" aria-label="Artwork details">
+              <div class="ppw-avatar" id="ppw-avatar">P</div>
+              <div class="ppw-identity"><div class="ppw-title" id="ppw-title"></div><div class="ppw-facts" id="ppw-facts"></div></div>
+              <div class="ppw-tags" id="ppw-tags"></div>
+            </section>
             <div class="ppw-batch-bar" id="ppw-batch-bar" hidden>
               <strong id="ppw-batch-count"></strong>
               <button class="ppw-button primary" id="ppw-batch-download" type="button"></button>
@@ -320,11 +325,6 @@
             </div>
             <div class="ppw-toast" id="ppw-toast" role="status" aria-live="polite" hidden></div>
           </div>
-          <section class="ppw-details" aria-label="Artwork details">
-            <div class="ppw-avatar" id="ppw-avatar">P</div>
-            <div class="ppw-identity"><div class="ppw-title" id="ppw-title"></div><div class="ppw-facts" id="ppw-facts"></div></div>
-            <div class="ppw-tags" id="ppw-tags"></div>
-          </section>
           <footer class="ppw-shortcuts"><span><kbd>J</kbd>/<kbd>K</kbd> <span id="ppw-shortcut-work"></span></span><span><kbd>←</kbd>/<kbd>→</kbd> <span id="ppw-shortcut-page"></span></span><span><kbd>D</kbd> <span id="ppw-shortcut-download"></span></span><span><kbd>B</kbd> <span id="ppw-shortcut-bookmark"></span></span><span><kbd>Space</kbd> <span id="ppw-shortcut-focus"></span></span></footer>
         </main>
       </div>
@@ -346,6 +346,7 @@
     artist = shadow.getElementById('ppw-avatar');
     facts = shadow.getElementById('ppw-facts');
     tags = shadow.getElementById('ppw-tags');
+    details = shadow.getElementById('ppw-details');
     pageLabel = shadow.getElementById('ppw-page-label');
     feedPageInput = shadow.getElementById('ppw-feed-page');
     feedPrevButton = shadow.getElementById('ppw-feed-prev');
@@ -417,6 +418,14 @@
     shadow.getElementById('ppw-stage').addEventListener('pointermove', onPointerMove);
     shadow.getElementById('ppw-stage').addEventListener('pointerup', onPointerUp);
     shadow.getElementById('ppw-stage').addEventListener('pointercancel', onPointerUp);
+    details.addEventListener('mouseenter', scheduleInfoIslandPosition);
+    details.addEventListener('mouseleave', scheduleInfoIslandPosition);
+    window.addEventListener('resize', scheduleInfoIslandPosition, { passive: true });
+    if ('ResizeObserver' in window) {
+      const infoObserver = new ResizeObserver(scheduleInfoIslandPosition);
+      infoObserver.observe(shadow.getElementById('ppw-stage'));
+      infoObserver.observe(previewImage);
+    }
     feed.addEventListener('scroll', onFeedScroll, { passive: true });
     bindResizer();
     document.addEventListener('keydown', onKeyDown, true);
@@ -431,6 +440,7 @@
     shell.dataset.userCollapsed = '';
     launcher.hidden = true;
     window.PixivPlusDownloadPanel?.setWorkbenchActive(true);
+    scheduleInfoIslandPosition();
     syncFeedPagination();
     scheduleScan();
   }
@@ -635,7 +645,6 @@
   }
 
   function setViewerLoading(record) {
-    shell.dataset.imageOrientation = 'unknown';
     loading.hidden = false;
     error.hidden = true;
     previewImage.hidden = true;
@@ -661,12 +670,19 @@
       : t('workbenchBookmark', 'Bookmark');
     downloadAllButton.hidden = currentInfo.pageCount <= 1 && !currentInfo.isUgoira;
     tags.replaceChildren();
-    for (const tag of currentInfo.tags.slice(0, 5)) {
+    for (const [index, tag] of currentInfo.tags.slice(0, 5).entries()) {
       const span = document.createElement('span');
-      span.className = 'ppw-tag';
+      span.className = `ppw-tag${index >= 2 ? ' extra' : ''}`;
       span.textContent = `#${tag}`;
       tags.appendChild(span);
     }
+    if (currentInfo.tags.length > 2) {
+      const more = document.createElement('span');
+      more.className = 'ppw-tag more';
+      more.textContent = `+${currentInfo.tags.length - 2}`;
+      tags.appendChild(more);
+    }
+    scheduleInfoIslandPosition();
   }
 
   function showPage(index) {
@@ -683,12 +699,10 @@
     previewImage.onload = () => {
       loading.hidden = true;
       previewImage.hidden = false;
-      shell.dataset.imageOrientation = previewImage.naturalHeight > previewImage.naturalWidth * 1.08
-        ? 'portrait'
-        : 'landscape';
       const format = extensionFromUrl(page?.original || url);
       const animation = currentInfo.isUgoira ? ` · ${t('workbenchUgoiraBadge', 'Ugoira')}` : '';
       facts.textContent = `${currentInfo.artist} · ${previewImage.naturalWidth}×${previewImage.naturalHeight} · ${format}${animation}`;
+      scheduleInfoIslandPosition();
     };
     previewImage.onerror = () => {
       loading.hidden = true;
@@ -924,6 +938,52 @@
 
   function applyTransform() {
     if (previewImage) previewImage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    scheduleInfoIslandPosition();
+  }
+
+  function scheduleInfoIslandPosition() {
+    if (infoPositionQueued) return;
+    infoPositionQueued = true;
+    requestAnimationFrame(() => {
+      infoPositionQueued = false;
+      positionInfoIsland();
+    });
+  }
+
+  function positionInfoIsland() {
+    if (!details || !previewImage || previewImage.hidden || !workspaceVisible) return;
+    const stage = shadow.getElementById('ppw-stage');
+    const stageRect = stage.getBoundingClientRect();
+    const imageRect = previewImage.getBoundingClientRect();
+    if (!stageRect.width || !stageRect.height || !imageRect.width || !imageRect.height) return;
+
+    const rightSpace = stageRect.right - imageRect.right;
+    if (rightSpace >= 204) {
+      details.dataset.placement = 'side';
+      details.dataset.overlay = 'false';
+      const width = clamp(rightSpace - 26, 184, 220);
+      details.style.width = `${width}px`;
+      details.style.left = `${imageRect.right - stageRect.left + 14}px`;
+      const maxTop = Math.max(12, stageRect.height - details.offsetHeight - 12);
+      const top = clamp(imageRect.top - stageRect.top + 6, 12, maxTop);
+      details.style.top = `${top}px`;
+      return;
+    }
+
+    details.dataset.placement = 'bottom';
+    const maxWidth = Math.max(180, stageRect.width - 96);
+    const width = Math.min(560, maxWidth, Math.max(260, imageRect.width));
+    details.style.width = `${width}px`;
+    const sideMargin = Math.min(48, Math.max(8, (stageRect.width - width) / 2));
+    const centeredLeft = imageRect.left - stageRect.left + (imageRect.width - width) / 2;
+    details.style.left = `${clamp(centeredLeft, sideMargin, stageRect.width - width - sideMargin)}px`;
+
+    const height = details.offsetHeight;
+    const belowTop = imageRect.bottom - stageRect.top + 12;
+    const fitsBelow = belowTop + height <= stageRect.height - 44;
+    details.dataset.overlay = fitsBelow ? 'false' : 'true';
+    const overlayTop = imageRect.bottom - stageRect.top - height - 12;
+    details.style.top = `${fitsBelow ? belowTop : clamp(overlayTop, 12, Math.max(12, stageRect.height - height - 44))}px`;
   }
 
   function onKeyDown(event) {

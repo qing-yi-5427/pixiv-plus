@@ -15,11 +15,15 @@ test('workbench constrains the grid row so the feed scrolls and preview stays vi
   assert.match(source, /\.ppw-stage \{[^}]*min-height:0/);
 });
 
-test('artwork metadata floats beside portrait images and adapts for landscape images', () => {
-  assert.match(source, /\.ppw-details \{[\s\S]*?position:absolute[\s\S]*?backdrop-filter:blur\(22px\)/);
-  assert.match(source, /\.ppw-shell\[data-image-orientation="portrait"\] \.ppw-stage \{ padding-right:300px; \}/);
-  assert.match(source, /\.ppw-shell\[data-image-orientation="landscape"\] \.ppw-details/);
-  assert.match(source, /shell\.dataset\.imageOrientation = previewImage\.naturalHeight > previewImage\.naturalWidth \* 1\.08/);
+test('artwork metadata follows the rendered image without reserving a fixed rail', () => {
+  assert.match(source, /\.ppw-details \{[\s\S]*?position:absolute[\s\S]*?backdrop-filter:blur\(18px\)/);
+  assert.doesNotMatch(source, /\.ppw-shell\[data-image-orientation="portrait"\] \.ppw-stage \{ padding-right:/);
+  assert.match(source, /function positionInfoIsland\(\)/);
+  assert.match(source, /const rightSpace = stageRect\.right - imageRect\.right/);
+  assert.match(source, /details\.dataset\.placement = 'side'/);
+  assert.match(source, /details\.dataset\.placement = 'bottom'/);
+  assert.match(source, /const fitsBelow = belowTop \+ height <= stageRect\.height - 44/);
+  assert.match(source, /className = `ppw-tag\$\{index >= 2 \? ' extra' : ''\}`/);
   assert.match(source, /\.ppw-shortcuts \{[^}]*padding:0 420px 0 15px/);
 });
 
