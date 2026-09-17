@@ -18,9 +18,11 @@
   const STORAGE_KEY = 'pp_download_history';
 
   function init() {
+    if (panelHost) return;
     panelHost = document.createElement('div');
     panelHost.id = 'pp-panel-host';
     panelHost.style.cssText = 'position:fixed;bottom:0;right:0;width:100%;height:100%;pointer-events:none;z-index:2147483649;';
+    panelHost.dataset.workbench = window.PixivPlusWorkbench?.isActive() ? 'true' : 'false';
     const shadow = panelHost.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');
@@ -305,7 +307,7 @@
       }
       .pp-history-card-state.complete { color: #5E6AD2; }
       .pp-history-card-state.cancelled { color: #8A8F98; }
-      .pp-history-card-state.error { color: rgba(255,107,107,0.8); }
+      .pp-history-card-state.error,.pp-history-card-state.interrupted { color: rgba(255,107,107,0.8); }
       .pp-history-empty {
         grid-column: 1 / -1;
         text-align: center;
@@ -339,6 +341,94 @@
       .pp-toast.success { background: rgba(14,14,17,0.95); border-color: rgba(94,106,210,0.5); }
       .pp-toast.error { background: rgba(14,14,17,0.95); border-color: rgba(255,107,107,0.3); }
       .pp-toast.warning { background: rgba(14,14,17,0.95); border-color: rgba(255,180,50,0.3); }
+
+      /* PixivPlus 2 workbench download center */
+      :host {
+        --pp-panel-bottom:18px;--pp-bg:#fff;--pp-soft:#f1f3f6;--pp-text:#24272d;
+        --pp-muted:#737984;--pp-line:#e1e4e9;--pp-blue:#0096fa;--pp-blue-soft:#e7f5ff;
+        --pp-success:#0b9963;--pp-danger:#d9365b;color-scheme:light dark;
+      }
+      :host([data-workbench="true"]) { --pp-panel-bottom:112px; }
+      .pp-panel {
+        bottom:var(--pp-panel-bottom);right:16px;width:min(316px,calc(100vw - 24px));max-height:318px;
+        background:var(--pp-bg);border:1px solid var(--pp-line);border-radius:12px;
+        box-shadow:0 16px 42px rgb(26 35 48/.2),0 2px 8px rgb(26 35 48/.08);
+        color:var(--pp-text);font:12px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+      }
+      .pp-panel.minimized { width:auto;min-width:196px;border-radius:10px; }
+      .pp-panel-header { min-height:42px;padding:7px 8px 7px 11px;border-bottom:1px solid var(--pp-line); }
+      .pp-panel-header:hover { background:var(--pp-soft); }
+      .pp-panel-title { font-size:13px;color:var(--pp-text); }
+      .pp-panel-title::before { content:"↓";display:inline-grid;place-items:center;width:22px;height:22px;margin-right:7px;border-radius:7px;background:var(--pp-blue-soft);color:var(--pp-blue);font-weight:700; }
+      .pp-panel-count { color:var(--pp-blue);margin-left:5px; }
+      .pp-panel-summary { color:var(--pp-muted);font-size:11px;margin-left:6px; }
+      .pp-panel-controls { gap:2px; }
+      .pp-panel-controls button,.pp-download-actions button {
+        width:28px;height:28px;padding:0;display:grid;place-items:center;background:transparent;
+        border:0;border-radius:7px;color:var(--pp-muted);font-size:14px;transition:background .15s,color .15s;
+      }
+      .pp-panel-controls button:hover,.pp-download-actions button:hover { color:var(--pp-text);background:var(--pp-soft); }
+      .pp-panel-body { max-height:204px;padding:5px;overflow-y:auto;scrollbar-width:thin; }
+      .pp-download-item {
+        display:grid;grid-template-columns:38px minmax(0,1fr) auto;align-items:center;gap:9px;
+        min-height:52px;padding:6px;border:0;border-radius:9px;
+      }
+      .pp-download-item + .pp-download-item { margin-top:3px; }
+      .pp-download-item:hover { background:var(--pp-soft); }
+      .pp-download-item:not(.has-thumb) { grid-template-columns:minmax(0,1fr) auto; }
+      .pp-download-thumb { width:38px;height:38px;border-radius:7px;overflow:hidden;background:var(--pp-soft); }
+      .pp-download-thumb[hidden] { display:none; }
+      .pp-download-thumb img { width:100%;height:100%;display:block;object-fit:cover; }
+      .pp-download-main { min-width:0; }
+      .pp-download-name { margin:0 0 6px;color:var(--pp-text);font-size:12px;font-weight:500; }
+      .pp-download-bar-row { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center; }
+      .pp-download-bar { height:4px;background:var(--pp-soft);border-radius:999px; }
+      .pp-download-bar-fill { background:var(--pp-blue);border-radius:999px;transition:width .2s ease; }
+      .pp-download-bar-fill.complete { background:var(--pp-success); }
+      .pp-download-bar-fill.error { background:var(--pp-danger); }
+      .pp-download-status { min-width:auto;color:var(--pp-muted);font-size:10px;text-align:right; }
+      .pp-download-status.complete { color:var(--pp-success); }
+      .pp-download-status.queued,.pp-download-status.cancelled { color:var(--pp-muted); }
+      .pp-download-status.error { color:var(--pp-danger); }
+      .pp-download-actions { margin:0;gap:1px; }
+      .pp-download-actions button { width:25px;height:25px;font-size:12px; }
+      .pp-panel-footer { min-height:40px;padding:6px 8px;border-top:1px solid var(--pp-line);gap:5px; }
+      .pp-panel-footer button {
+        min-width:0;padding:5px 8px;background:var(--pp-soft);border:1px solid transparent;
+        border-radius:7px;color:var(--pp-muted);font-size:11px;
+      }
+      .pp-panel-footer button:hover { background:var(--pp-blue-soft);color:var(--pp-text); }
+      #pp-choose-folder { max-width:132px;margin-right:auto; }
+      .pp-show-more { background:var(--pp-blue-soft)!important;border-color:transparent!important;color:var(--pp-blue)!important; }
+      .pp-show-more:hover { filter:brightness(.97); }
+      .pp-history-overlay { background:rgb(18 24 32/.42);backdrop-filter:blur(6px); }
+      .pp-history-panel { background:var(--pp-bg);border:1px solid var(--pp-line);box-shadow:0 24px 70px rgb(18 24 32/.28);color:var(--pp-text); }
+      .pp-history-title { color:var(--pp-text); }
+      .pp-history-count,.pp-history-card-artist,.pp-history-empty { color:var(--pp-muted); }
+      .pp-history-close { color:var(--pp-muted); }
+      .pp-history-close:hover { color:var(--pp-text);background:var(--pp-soft); }
+      .pp-history-card { background:var(--pp-soft);border-color:var(--pp-line); }
+      .pp-history-card:hover { border-color:var(--pp-blue); }
+      .pp-history-card-thumb,.pp-history-card-placeholder { background:var(--pp-soft); }
+      .pp-history-card-title { color:var(--pp-text); }
+      .pp-history-card-state.complete { color:var(--pp-success); }
+      .pp-history-card-state.cancelled { color:var(--pp-muted); }
+      .pp-history-card-state.error,.pp-history-card-state.interrupted { color:var(--pp-danger); }
+      .pp-toast {
+        right:344px;bottom:calc(var(--pp-panel-bottom) + var(--pp-toast-offset,0px));padding:9px 12px;
+        background:var(--pp-bg)!important;border:1px solid var(--pp-line)!important;border-radius:9px;
+        box-shadow:0 10px 32px rgb(26 35 48/.18);color:var(--pp-text);font-size:12px;
+      }
+      .pp-toast.success { border-left:3px solid var(--pp-success)!important; }
+      .pp-toast.error { border-left:3px solid var(--pp-danger)!important; }
+      .pp-toast.info { border-left:3px solid var(--pp-blue)!important; }
+      @media (prefers-color-scheme:dark) {
+        :host { --pp-bg:#17191f;--pp-soft:#22252c;--pp-text:#eff1f4;--pp-muted:#9aa1ad;--pp-line:#2d3139;--pp-blue:#35a9ff;--pp-blue-soft:#12354d;--pp-success:#4bd79b;--pp-danger:#ff6682; }
+      }
+      @media (max-width:680px) {
+        .pp-panel { right:12px; }
+        .pp-toast { right:12px;bottom:calc(var(--pp-panel-bottom) + 58px);max-width:calc(100vw - 24px); }
+      }
     `;
     shadow.appendChild(style);
 
@@ -351,7 +441,7 @@
         <div class="pp-panel-controls">
           <button id="pp-panel-pause" title="Pause queued downloads">Ⅱ</button>
           <button id="pp-panel-cancel-all" title="Cancel all">×</button>
-          <button id="pp-panel-minimize" title="Minimize">_</button>
+          <button id="pp-panel-minimize" title="Minimize">−</button>
           <button id="pp-panel-close" title="Close">&times;</button>
         </div>
       </div>
@@ -447,15 +537,18 @@
       item.className = 'pp-download-item';
       item.dataset.url = data.url || '';
       item.innerHTML = `
-        <div class="pp-download-name"></div>
-        <div class="pp-download-bar-row">
-          <div class="pp-download-bar"><div class="pp-download-bar-fill"></div></div>
-          <div class="pp-download-status"></div>
-          <div class="pp-download-actions">
-            <button class="pp-dl-cancel" title="Cancel">&#10005;</button>
-            <button class="pp-dl-retry" title="Retry" style="display:none;">&#8635;</button>
-            <button class="pp-dl-remove" title="Remove">&#128465;</button>
+        <div class="pp-download-thumb" hidden><img alt=""></div>
+        <div class="pp-download-main">
+          <div class="pp-download-name"></div>
+          <div class="pp-download-bar-row">
+            <div class="pp-download-bar"><div class="pp-download-bar-fill"></div></div>
+            <div class="pp-download-status"></div>
           </div>
+        </div>
+        <div class="pp-download-actions">
+          <button class="pp-dl-cancel" title="Cancel">&#10005;</button>
+          <button class="pp-dl-retry" title="Retry" style="display:none;">&#8635;</button>
+          <button class="pp-dl-remove" title="Remove">&#128465;</button>
         </div>
       `;
       const name = item.querySelector('.pp-download-name');
@@ -502,6 +595,8 @@
         window.PixivPlusDownload?.retryDownload(data.filename);
       });
     }
+
+    syncItemThumbnail(item, data);
 
     const fill = item.querySelector('.pp-download-bar-fill');
     const status = item.querySelector('.pp-download-status');
@@ -662,6 +757,28 @@
     if (button) button.textContent = `Folder: ${name || 'not selected'}`;
   }
 
+  function setWorkbenchActive(active) {
+    if (panelHost) panelHost.dataset.workbench = active ? 'true' : 'false';
+  }
+
+  function syncItemThumbnail(item, data) {
+    const meta = metaStore.get(data.filename) || {};
+    const url = data.thumbUrl || meta.thumbUrl || '';
+    if (!url) return;
+    const wrapper = item.querySelector('.pp-download-thumb');
+    const image = wrapper?.querySelector('img');
+    if (!wrapper || !image || image.src === url) return;
+    image.onload = () => {
+      wrapper.hidden = false;
+      item.classList.add('has-thumb');
+    };
+    image.onerror = () => {
+      wrapper.hidden = true;
+      item.classList.remove('has-thumb');
+    };
+    image.src = url;
+  }
+
   function showHistoryModal(shadow) {
     if (!shadow) shadow = panelHost?.shadowRoot;
     if (!shadow) return;
@@ -758,7 +875,7 @@
 
     const existingToasts = shadow.querySelectorAll('.pp-toast.visible');
     const offset = existingToasts.length * 52;
-    toast.style.bottom = (20 + offset) + 'px';
+    toast.style.setProperty('--pp-toast-offset', `${offset}px`);
 
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -777,6 +894,7 @@
     showToast,
     updateDownload,
     isDuplicate,
-    setFolderName
+    setFolderName,
+    setWorkbenchActive
   };
 })();

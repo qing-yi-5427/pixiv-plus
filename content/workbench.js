@@ -6,6 +6,7 @@
 
   const ROUTE = '/bookmark_new_illust.php';
   const model = window.PixivPlusWorkbenchModel;
+  const SEEN_WORKS_STORAGE_KEY = 'workbenchSeenWorkIds';
   const store = model.createStore();
   const sourceCards = new Map();
   const thumbElements = new Map();
@@ -63,13 +64,15 @@
     chrome.storage.local.get({
       workbenchEnabled: true,
       workbenchLeftWidth: 340,
-      workbenchDensity: 'balanced'
+      workbenchDensity: 'balanced',
+      [SEEN_WORKS_STORAGE_KEY]: []
     }, settings => {
       enabled = settings.workbenchEnabled !== false;
       leftWidth = clamp(Number(settings.workbenchLeftWidth) || 340, 240, 520);
       density = ['compact', 'balanced', 'filmstrip'].includes(settings.workbenchDensity)
         ? settings.workbenchDensity
         : 'balanced';
+      replaceSeenWorkIds(settings[SEEN_WORKS_STORAGE_KEY]);
       syncRoute();
     });
 
@@ -77,6 +80,10 @@
       if (changes.workbenchEnabled) {
         enabled = changes.workbenchEnabled.newValue !== false;
         syncRoute();
+      }
+      if (changes[SEEN_WORKS_STORAGE_KEY]) {
+        replaceSeenWorkIds(changes[SEEN_WORKS_STORAGE_KEY].newValue);
+        syncSeenState();
       }
     });
 
@@ -406,6 +413,7 @@
     shell.hidden = false;
     shell.dataset.userCollapsed = '';
     launcher.hidden = true;
+    window.PixivPlusDownloadPanel?.setWorkbenchActive(true);
     syncFeedPagination();
     scheduleScan();
   }
@@ -417,6 +425,7 @@
     shell.hidden = true;
     shell.dataset.userCollapsed = 'true';
     launcher.hidden = false;
+    window.PixivPlusDownloadPanel?.setWorkbenchActive(false);
     window.scrollTo({ top: nativeScrollBeforeWorkbench, behavior: 'auto' });
   }
 
@@ -454,6 +463,7 @@
     workspaceVisible = false;
     if (shell) shell.hidden = true;
     if (launcher) launcher.hidden = true;
+    window.PixivPlusDownloadPanel?.setWorkbenchActive(false);
   }
 
   function scheduleScan() {
@@ -503,9 +513,6 @@
     image.loading = 'lazy';
     image.decoding = 'async';
     if (record.thumbUrl) image.src = record.thumbUrl;
-    const unread = document.createElement('span');
-    unread.className = 'ppw-unread';
-    unread.setAttribute('aria-hidden', 'true');
     const check = document.createElement('span');
     check.className = 'ppw-check';
     check.textContent = '✓';
@@ -513,7 +520,9 @@
     const label = document.createElement('span');
     label.className = 'ppw-thumb-label';
     label.textContent = record.title || record.id;
-    button.append(image, unread, check, label);
+    button.append(image);
+    if (!seenWorkIds.has(record.id)) button.append(createUnreadMarker());
+    button.append(check, label);
     button.addEventListener('click', event => onThumbnailClick(event, record.id));
     feed.appendChild(button);
     thumbElements.set(record.id, button);
@@ -566,7 +575,7 @@
     currentWorkId = String(id);
     currentInfo = null;
     currentPage = 0;
-    seenWorkIds.add(currentWorkId);
+    markWorkSeen(currentWorkId);
     resetZoom();
     for (const [workId, button] of thumbElements) {
       button.classList.toggle('selected', workId === currentWorkId);
@@ -942,10 +951,46 @@
 
   function updateCounts() {
     if (!shadow) return;
-    const unread = Math.max(0, store.size - seenWorkIds.size);
+    const unread = store.all().filter(record => !seenWorkIds.has(record.id)).length;
     shadow.getElementById('ppw-count').textContent = `${unread} / ${store.size}`;
     shadow.getElementById('ppw-summary').textContent = t('workbenchSummary', '{count} artworks · {unread} unread')
       .replace('{count}', String(store.size)).replace('{unread}', String(unread));
+  }
+
+  function createUnreadMarker() {
+    const unread = document.createElement('span');
+    unread.className = 'ppw-unread';
+    unread.setAttribute('aria-hidden', 'true');
+    return unread;
+  }
+
+  function replaceSeenWorkIds(value) {
+    seenWorkIds.clear();
+    if (!Array.isArray(value)) return;
+    for (const id of value) {
+      const normalized = String(id || '');
+      if (normalized) seenWorkIds.add(normalized);
+    }
+  }
+
+  function markWorkSeen(id) {
+    const normalized = String(id || '');
+    if (!normalized || seenWorkIds.has(normalized)) return;
+    seenWorkIds.add(normalized);
+    chrome.storage.local.set({ [SEEN_WORKS_STORAGE_KEY]: [...seenWorkIds] });
+  }
+
+  function syncSeenState() {
+    if (!shadow) return;
+    for (const record of store.all()) {
+      const button = thumbElements.get(record.id);
+      if (!button) continue;
+      const marker = button.querySelector('.ppw-unread');
+      if (seenWorkIds.has(record.id)) marker?.remove();
+      else if (!marker) button.insertBefore(createUnreadMarker(), button.querySelector('.ppw-check'));
+    }
+    updateCounts();
+    if (shadow.getElementById('ppw-filter').value === 'unread') applyFilter();
   }
 
   function showToast(message) {

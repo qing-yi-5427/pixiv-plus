@@ -51,3 +51,11 @@ test('workbench bookmarks through Pixiv AJAX helpers and never opens the legacy 
   assert.match(source, /PixivPlusAPI\.unbookmarkWork\(currentWorkId, currentInfo\.bookmarkId\)/);
   assert.doesNotMatch(source, /bookmark_add\.php/);
 });
+
+test('read state persists by artwork id and page counts only loaded unread works', () => {
+  assert.match(source, /const SEEN_WORKS_STORAGE_KEY = 'workbenchSeenWorkIds'/);
+  assert.match(source, /chrome\.storage\.local\.set\(\{ \[SEEN_WORKS_STORAGE_KEY\]: \[\.\.\.seenWorkIds\] \}\)/);
+  assert.match(source, /replaceSeenWorkIds\(settings\[SEEN_WORKS_STORAGE_KEY\]\)/);
+  assert.match(source, /if \(!seenWorkIds\.has\(record\.id\)\) button\.append\(createUnreadMarker\(\)\)/);
+  assert.match(source, /store\.all\(\)\.filter\(record => !seenWorkIds\.has\(record\.id\)\)\.length/);
+});
