@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Rebuilt settings as a workbench-styled popup and full options page with browsing, downloads, and filename sections.
+- Added live feed density/width settings, keyboard-accessible controls, and light/dark system themes.
+- Added validated partial settings writes, truthful save/error states, and correct zero-delay persistence.
+- Reused the download filename generator for single/multi-page previews and clickable naming tokens.
+- Added workbench settings/folder shortcuts and reliable directory reset with cross-tab invalidation.
+
 ## 2.1.0 - 2026-09-17
 
 - Added a reversible split-view workbench for Pixiv's followed-artworks feed.

@@ -28,6 +28,7 @@ function loadWorker(fetchImpl) {
     }
   };
   vm.createContext(context);
+  context.importScripts = () => vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'lib', 'settings.js'), 'utf8'), context);
   vm.runInContext(workerSource, context);
   return connectListener;
 }

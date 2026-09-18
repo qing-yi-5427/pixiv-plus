@@ -141,6 +141,14 @@ test('filenames are bounded and avoid reserved Windows device names', () => {
   assert.ok(long.endsWith('.jpg'));
 });
 
+test('settings preview uses the download filename rules without changing the active template', () => {
+  const api = loadApi(async () => response({}), { filenameTemplate: '{artist}-{id}' });
+  const work = { id: '42', artist: 'Artist', title: 'CON', pageCount: 2, pageUrls: [{ original: 'https://i.pximg.net/42.jpg' }] };
+  assert.equal(api.generateFilename(work, 0, '{title}'), '_CON_p0.jpg');
+  assert.equal(api.generateFilename(work, 0, '{id}{page}'), '42_p0.jpg');
+  assert.equal(api.generateFilename(work, 0), 'Artist-42_p0.jpg');
+});
+
 test('ugoira metadata exposes the source ZIP and frame timing', async () => {
   const api = loadApi(async url => {
     assert.equal(url, '/ajax/illust/42/ugoira_meta');

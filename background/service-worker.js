@@ -3,39 +3,34 @@
 // Referer is injected by declarativeNetRequest rules
 
 const activeTransfers = new Map();
+importScripts('../lib/settings.js');
+let settingsWrites = Promise.resolve();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'getSettings') {
-    chrome.storage.local.get({
-      hoverPreview: true,
-      workbenchEnabled: true,
-      workbenchPreloadOriginals: false,
-      hoverDelay: 400,
-      filenameTemplate: '{artist}-{title}-{id}',
-      embedTags: true,
-      previewBehavior: 'peek',
-      downloadConcurrency: 3,
-      duplicatePolicy: 'skip',
-      multiDownloadDefault: 'ask'
-    }, (settings) => {
-      sendResponse(settings);
+    chrome.storage.local.get(PixivPlusSettings.defaults, (settings) => {
+      const error = chrome.runtime.lastError;
+      sendResponse(error ? { error: error.message } : PixivPlusSettings.normalize(settings));
     });
     return true;
   }
 
   if (msg.type === 'saveSettings') {
-    const toSave = {};
-    if (msg.hoverPreview !== undefined) toSave.hoverPreview = msg.hoverPreview;
-    if (msg.workbenchEnabled !== undefined) toSave.workbenchEnabled = msg.workbenchEnabled;
-    if (msg.workbenchPreloadOriginals !== undefined) toSave.workbenchPreloadOriginals = msg.workbenchPreloadOriginals;
-    if (msg.hoverDelay !== undefined) toSave.hoverDelay = msg.hoverDelay;
-    if (msg.embedTags !== undefined) toSave.embedTags = msg.embedTags;
-    if (msg.filenameTemplate !== undefined) toSave.filenameTemplate = msg.filenameTemplate;
-    if (msg.previewBehavior !== undefined) toSave.previewBehavior = msg.previewBehavior;
-    if (msg.downloadConcurrency !== undefined) toSave.downloadConcurrency = msg.downloadConcurrency;
-    if (msg.duplicatePolicy !== undefined) toSave.duplicatePolicy = msg.duplicatePolicy;
-    if (msg.multiDownloadDefault !== undefined) toSave.multiDownloadDefault = msg.multiDownloadDefault;
-    chrome.storage.local.set(toSave);
+    try {
+      const toSave = PixivPlusSettings.validatePatch(msg);
+      settingsWrites = settingsWrites.then(() => new Promise(resolve => {
+        chrome.storage.local.set(toSave, () => {
+          const error = chrome.runtime.lastError;
+          try { sendResponse(error ? { error: error.message } : { ok: true }); }
+          finally { resolve(); }
+        });
+      }));
+    } catch (error) { sendResponse({ error: `Invalid setting: ${error.message}` }); }
+    return true;
+  }
+
+  if (msg.type === 'openSettings') {
+    chrome.runtime.openOptionsPage();
     sendResponse({ ok: true });
   }
 

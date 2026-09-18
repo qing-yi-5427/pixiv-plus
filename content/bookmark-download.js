@@ -27,6 +27,13 @@
     multiDownloadDefault = settings.multiDownloadDefault || 'ask';
   });
   chrome.storage.onChanged.addListener(changes => {
+    if (changes.downloadDirectoryResetAt) {
+      dirHandleLoad = Promise.resolve(dirHandleLoad).then(() => {
+        dirHandle = null;
+        window.PixivPlusDownloadPanel?.setFolderName('not selected');
+        return null;
+      });
+    }
     if (changes.downloadConcurrency) {
       maxConcurrentDownloads = Math.max(1, Math.min(6, changes.downloadConcurrency.newValue || 3));
       pumpDownloadQueue();
@@ -120,6 +127,7 @@
       dirHandle = handle;
       dirHandleLoad = Promise.resolve(handle);
       await saveDirHandle(handle);
+      window.PixivPlusDownloadPanel?.setFolderName(handle.name);
       window.PixivPlusDownloadPanel?.showToast(`Download folder: ${handle.name}`, 'success');
       return handle;
     } catch (err) {
@@ -607,23 +615,32 @@
     if (msg.type === 'getDirInfo') {
       (async () => {
         try {
-          const handle = await getDirHandle(false);
-          sendResponse({ name: handle ? handle.name : null });
+          await dirHandleLoad;
+          const permission = dirHandle ? await dirHandle.queryPermission({ mode: 'readwrite' }) : null;
+          sendResponse({ name: dirHandle?.name || null, permission });
         } catch {
-          sendResponse({ name: null });
+          sendResponse({ error: 'Directory information unavailable' });
         }
       })();
       return true;
     }
     if (msg.type === 'resetDir') {
-      dirHandle = null;
-      dirHandleLoad = Promise.resolve(null);
-      window.PixivPlusDownloadPanel?.setFolderName('not selected');
       openDB().then(db => {
         const tx = db.transaction('handles', 'readwrite');
         tx.objectStore('handles').delete('downloadDir');
-      }).catch(() => {});
-      sendResponse({ ok: true });
+        tx.oncomplete = () => {
+          db.close();
+          dirHandle = null;
+          dirHandleLoad = Promise.resolve(null);
+          window.PixivPlusDownloadPanel?.setFolderName('not selected');
+          chrome.storage.local.set({ downloadDirectoryResetAt: Date.now() }, () => {
+            const error = chrome.runtime.lastError;
+            sendResponse(error ? { error: error.message } : { ok: true });
+          });
+        };
+        tx.onabort = () => { db.close(); sendResponse({ error: 'Directory reset failed' }); };
+      }).catch(() => sendResponse({ error: 'Directory storage unavailable' }));
+      return true;
     }
   });
 

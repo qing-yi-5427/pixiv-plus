@@ -38,6 +38,10 @@
       "run_at": "document_idle"
     }
   ],
+  "options_ui": {
+    "page": "popup/settings.html",
+    "open_in_tab": true
+  },
   "action": {
     "default_title": "PixivPlus Settings",
     "default_popup": "popup/popup.html",

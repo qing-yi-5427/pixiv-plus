@@ -5,9 +5,8 @@ const test = require('node:test');
 
 const read = file => fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
 const workbench = read('content/workbench.js');
-const popupHtml = read('popup/popup.html');
 const popupJs = read('popup/popup.js');
-const worker = read('background/service-worker.js');
+const settings = require('../lib/settings.js');
 
 test('workbench can preload every discovered artwork original with bounded concurrency', () => {
   assert.match(workbench, /id="ppw-load-originals"/);
@@ -20,10 +19,8 @@ test('workbench can preload every discovered artwork original with bounded concu
 });
 
 test('automatic original preload preference is exposed and persisted', () => {
-  assert.match(popupHtml, /id="workbench-preload-originals"/);
-  assert.match(popupJs, /workbenchPreloadOriginals: document\.getElementById\('workbench-preload-originals'\)/);
-  assert.match(popupJs, /workbenchPreloadOriginals: fields\.workbenchPreloadOriginals\.checked/);
-  assert.match(worker, /workbenchPreloadOriginals: false/);
-  assert.match(worker, /toSave\.workbenchPreloadOriginals = msg\.workbenchPreloadOriginals/);
+  assert.match(popupJs, /toggle\('workbenchPreloadOriginals'/);
+  assert.equal(settings.defaults.workbenchPreloadOriginals, false);
+  assert.deepEqual(settings.validatePatch({workbenchPreloadOriginals: true}), {workbenchPreloadOriginals: true});
   assert.match(workbench, /if \(preloadOriginalsByDefault \|\| originalMode\) scheduleAutoOriginalPreload\(\)/);
 });

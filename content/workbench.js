@@ -72,6 +72,11 @@
   }
 
   function init() {
+    chrome.runtime.onMessage.addListener((message, _sender, respond) => {
+      if (message.type !== 'showWorkbench') return;
+      showWorkbench();
+      respond({ active: workspaceVisible });
+    });
     chrome.storage.local.get({
       workbenchEnabled: true,
       workbenchLeftWidth: 340,
@@ -91,6 +96,15 @@
     });
 
     chrome.storage.onChanged.addListener(changes => {
+      if (changes.workbenchDensity) {
+        const value = changes.workbenchDensity.newValue;
+        density = ['compact', 'balanced', 'filmstrip'].includes(value) ? value : 'balanced';
+        applyDensity();
+      }
+      if (changes.workbenchLeftWidth) {
+        leftWidth = clamp(Number(changes.workbenchLeftWidth.newValue) || 340, 240, 520);
+        shell?.style.setProperty('--ppw-left-width', `${leftWidth}px`);
+      }
       if (changes.workbenchEnabled) {
         enabled = changes.workbenchEnabled.newValue !== false;
         syncRoute();
@@ -295,6 +309,8 @@
           <option value="all"></option><option value="unread"></option>
         </select>
         <button class="ppw-button" id="ppw-original" type="button"></button>
+        <button class="ppw-icon-button" id="ppw-folder" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5h6l2 2h10v13H3Z"/><path d="M3 10h18"/></svg></button>
+        <button class="ppw-icon-button" id="ppw-settings" type="button">⚙</button>
       </header>
       <div class="ppw-body">
         <aside class="ppw-browser" aria-label="Artwork thumbnails">
@@ -386,6 +402,14 @@
     shadow.getElementById('ppw-route-title').textContent = t('workbenchTitle', 'Following feed');
     shadow.getElementById('ppw-feed-title').textContent = t('workbenchUnreadFirst', 'Artwork feed');
     shadow.getElementById('ppw-original').textContent = t('workbenchOriginal', 'Original page');
+    const settingsButton = shadow.getElementById('ppw-settings');
+    settingsButton.title = chrome.i18n.getUILanguage().startsWith('zh') ? '工作台设置' : 'Workbench settings';
+    settingsButton.setAttribute('aria-label', settingsButton.title);
+    settingsButton.addEventListener('click', () => chrome.runtime.sendMessage({ type: 'openSettings' }));
+    const folderButton = shadow.getElementById('ppw-folder');
+    folderButton.title = chrome.i18n.getUILanguage().startsWith('zh') ? '选择下载目录' : 'Choose download folder';
+    folderButton.setAttribute('aria-label', folderButton.title);
+    folderButton.addEventListener('click', () => window.PixivPlusDownload?.chooseDirectory());
     loadOriginalsButton.querySelector('.label').textContent = t('workbenchLoadOriginals', 'Load page originals');
     loadOriginalsButton.title = t('preloadOriginalsSettingHint', 'Preload the first original image of every artwork in the current feed page.');
     shadow.getElementById('ppw-filter').options[0].textContent = t('workbenchFilterAll', 'All artworks');
