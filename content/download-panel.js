@@ -550,7 +550,7 @@
       panelVisible = true;
     }
 
-    // Ensure panel host is last in DOM so it renders above hover preview
+    // Keep the download controls above the workbench and page-selection dialog.
     if (panelHost.nextElementSibling) {
       document.body.appendChild(panelHost);
     }
@@ -756,8 +756,6 @@
       if (result[STORAGE_KEY] && Array.isArray(result[STORAGE_KEY])) {
         history = result[STORAGE_KEY];
         updateShowMoreButton(panelHost?.shadowRoot);
-        const workIds = history.filter(item => item.state === 'complete' && item.workId).map(item => item.workId);
-        window.PixivPlusDownload?.markDownloadedWorks(workIds);
       }
     });
   }

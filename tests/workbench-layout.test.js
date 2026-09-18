@@ -46,13 +46,12 @@ test('thumbnail rows keep a square intrinsic size instead of collapsing into the
   assert.doesNotMatch(thumbnailImageRule, /position:absolute/);
 });
 
-test('workbench exposes feed pagination and a visible return launcher', () => {
+test('workbench exposes centered feed pagination without a native-page toggle', () => {
   assert.match(source, /id="ppw-feed-prev"/);
   assert.match(source, /id="ppw-feed-page" type="text" inputmode="numeric"/);
   assert.match(source, /id="ppw-feed-next"/);
   assert.match(source, /function navigateFeedPage\(page\)[\s\S]*?location\.assign\(url\.href\)/);
-  assert.match(source, /\.ppw-launcher \{[^}]*top:74px[^}]*pointer-events:auto/);
-  assert.match(source, /launcher\.hidden = false/);
+  assert.doesNotMatch(source, /ppw-launcher|showOriginalPage|workbenchEnabled|userCollapsed/);
   assert.match(source, /\.ppw-feed-page-input \{[^}]*padding:0[^}]*text-align:center[^}]*line-height:30px/);
 });
 

@@ -4,9 +4,11 @@
 
 - Rebuilt settings as a workbench-styled popup and full options page with browsing, downloads, and filename sections.
 - Added live feed density/width settings, keyboard-accessible controls, and light/dark system themes.
-- Added validated partial settings writes, truthful save/error states, and correct zero-delay persistence.
+- Added validated partial settings writes and truthful save/error states.
 - Reused the download filename generator for single/multi-page previews and clickable naming tokens.
 - Added workbench settings/folder shortcuts and reliable directory reset with cross-tab invalidation.
+- Made the following-feed workbench the sole extension browsing UI; removed the native-page switch, hover-preview module, and legacy thumbnail download buttons.
+- Removed obsolete hover/native-page preferences without touching saved read state, downloads, or directory access.
 
 ## 2.1.0 - 2026-09-17
 

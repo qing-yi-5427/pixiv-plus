@@ -10,7 +10,6 @@
   const activeDownloads = new Map(); // url -> job
   const reservedFilenames = new Set();
   const failedDownloads = new Map(); // filename -> job
-  const completedWorkIds = new Set();
   let maxConcurrentDownloads = 3;
   let duplicatePolicy = 'skip';
   let multiDownloadDefault = 'ask';
@@ -277,7 +276,6 @@
     const policy = options.duplicatePolicy || duplicatePolicy;
     if (policy === 'skip' && panel?.isDuplicate(filename)) {
       panel.showToast(`Already downloaded: ${meta?.title || filename}`, 'warning');
-      updateThumbnailState(meta?.workId, 'complete');
       return false;
     }
 
@@ -287,7 +285,6 @@
 
     if (!handle) {
       panel?.showToast('Choose a download folder before downloading', 'warning');
-      updateThumbnailState(meta?.workId, 'idle');
       return false;
     }
 
@@ -312,7 +309,6 @@
     };
     reservedFilenames.add(filename);
     pendingDownloads.push(job);
-    updateThumbnailState(meta?.workId, 'queued');
 
     panel.updateDownload({
       filename,
@@ -365,7 +361,6 @@
       workId: meta.workId || '',
       pageIndex: meta.pageIndex ?? 0
     });
-    updateThumbnailState(meta.workId, 'downloading', 0);
 
     try {
       const blob = await fetchImageStream(url, controller.signal, progress => {
@@ -377,8 +372,6 @@
           speed: progress.speed,
           url
         });
-        const pct = progress.total > 0 ? Math.round((progress.received / progress.total) * 100) : 0;
-        updateThumbnailState(meta.workId, 'downloading', pct);
       });
 
       if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
@@ -401,16 +394,13 @@
       }
       panel.updateDownload({ filename, state: 'complete' });
       failedDownloads.delete(filename);
-      updateThumbnailState(meta.workId, 'complete');
 
     } catch (err) {
       if (controller.signal.aborted || err.name === 'AbortError') {
         panel.updateDownload({ filename, state: 'cancelled' });
-        updateThumbnailState(meta.workId, 'idle');
         return;
       }
       failedDownloads.set(filename, { ...job, controller: null });
-      updateThumbnailState(meta.workId, 'error');
       panel.updateDownload({
         filename,
         state: 'interrupted',
@@ -644,56 +634,6 @@
     }
   });
 
-  // --- Download icon on thumbnails ---
-
-  function addDownloadIcon(card) {
-    if (card.querySelector('.pp-download-btn')) return;
-    const link = card.querySelector('a[href*="/artworks/"]')
-              || (card.tagName === 'A' && card.href?.includes('/artworks/') ? card : null);
-    if (!link) return;
-    const workIdMatch = link.href.match(/\/artworks\/(\d+)/);
-    if (!workIdMatch) return;
-
-    const btn = document.createElement('button');
-    btn.className = 'pp-download-btn';
-    btn.title = 'Download original';
-    btn.dataset.workId = workIdMatch[1];
-    btn.dataset.state = 'idle';
-    btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
-
-    btn.addEventListener('click', async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      await downloadWork(workIdMatch[1]);
-    });
-
-    card.style.position = card.style.position || 'relative';
-    card.appendChild(btn);
-    if (completedWorkIds.has(workIdMatch[1])) updateThumbnailState(workIdMatch[1], 'complete');
-  }
-
-  function updateThumbnailState(workId, state, progress = 0) {
-    if (!workId) return;
-    if (state === 'complete') completedWorkIds.add(String(workId));
-    document.querySelectorAll(`.pp-download-btn[data-work-id="${CSS.escape(String(workId))}"]`).forEach(btn => {
-      btn.dataset.state = state;
-      btn.style.setProperty('--pp-progress', `${Math.max(0, Math.min(100, progress)) * 3.6}deg`);
-      btn.title = state === 'queued' ? 'Queued'
-        : state === 'downloading' ? `Downloading ${progress}%`
-        : state === 'complete' ? 'Downloaded'
-        : state === 'error' ? 'Download failed — click to retry'
-        : 'Download original';
-    });
-  }
-
-  function markDownloadedWorks(workIds) {
-    for (const workId of workIds) {
-      completedWorkIds.add(String(workId));
-      updateThumbnailState(workId, 'complete');
-    }
-  }
-
   // --- Multi-image selector ---
 
   let selectorHost = null;
@@ -913,7 +853,6 @@
       job.cancelled = true;
       reservedFilenames.delete(job.filename);
       window.PixivPlusDownloadPanel.updateDownload({ filename: job.filename, state: 'cancelled' });
-      updateThumbnailState(job.meta.workId, 'idle');
       return;
     }
 
@@ -945,14 +884,12 @@
   window.PixivPlusDownload = {
     downloadFile,
     downloadWork,
-    addDownloadIcon,
     cancelDownload,
     cancelAllDownloads,
     toggleQueuePaused,
     retryDownload,
     downloadAllWork,
     downloadWorks,
-    chooseDirectory,
-    markDownloadedWorks
+    chooseDirectory
   };
 })();

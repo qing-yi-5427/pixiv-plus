@@ -1,5 +1,15 @@
 # PixivPlus 2.1.0 Release Checklist
 
+## Next release: workbench-only settings
+
+- [ ] Verify the following feed opens in the workbench even with an old saved `workbenchEnabled: false` preference.
+- [ ] Verify no original-page toggle, hover-preview settings, or legacy thumbnail download buttons remain.
+- [ ] Verify density, width, preload, download and naming settings persist; check save-failure feedback.
+- [ ] Verify existing read state, download history, and directory access survive the upgrade.
+- [ ] Reload the unpacked extension and refresh existing Pixiv tabs before browser QA.
+
+The checklist below records the previous 2.1.0 release; its submitted ZIP must not be overwritten by development builds.
+
 ## Automated
 
 - [x] Run `npm run release:check`.
@@ -11,7 +21,7 @@
 ## Manual browser QA
 
 - [ ] Repeat the unpacked-extension check in the user's normal Edge profile.
-- [ ] Verify the following-feed workbench discovers newly appended Pixiv cards and can return to the original page.
+- [ ] Verify the following-feed workbench discovers newly appended Pixiv cards.
 - [ ] Verify work navigation, page navigation, zoom, pan, focus mode, unread filtering, and density changes.
 - [ ] Verify Shift range selection and batch downloads from the workbench.
 - [ ] Verify manual and automatic current-feed original-image preloading.

@@ -1,5 +1,5 @@
 // PixivPlus - Follow-feed workbench
-// Replaces bookmark_new_illust.php with a reversible split-view browser.
+// The following-feed workbench is the extension's sole browsing surface.
 
 (() => {
   'use strict';
@@ -17,11 +17,9 @@
   const seenWorkIds = new Set();
   const batchSelection = new Set();
 
-  let enabled = true;
   let host = null;
   let shadow = null;
   let shell = null;
-  let launcher = null;
   let feed = null;
   let emptyState = null;
   let previewImage = null;
@@ -52,7 +50,6 @@
   let lastBatchIndex = -1;
   let scanQueued = false;
   let nativeLoadRequested = false;
-  let nativeScrollBeforeWorkbench = 0;
   let leftWidth = 340;
   let density = 'balanced';
   let zoom = 1;
@@ -78,13 +75,11 @@
       respond({ active: workspaceVisible });
     });
     chrome.storage.local.get({
-      workbenchEnabled: true,
       workbenchLeftWidth: 340,
       workbenchDensity: 'balanced',
       workbenchPreloadOriginals: false,
       [SEEN_WORKS_STORAGE_KEY]: []
     }, settings => {
-      enabled = settings.workbenchEnabled !== false;
       leftWidth = clamp(Number(settings.workbenchLeftWidth) || 340, 240, 520);
       density = ['compact', 'balanced', 'filmstrip'].includes(settings.workbenchDensity)
         ? settings.workbenchDensity
@@ -105,10 +100,6 @@
         leftWidth = clamp(Number(changes.workbenchLeftWidth.newValue) || 340, 240, 520);
         shell?.style.setProperty('--ppw-left-width', `${leftWidth}px`);
       }
-      if (changes.workbenchEnabled) {
-        enabled = changes.workbenchEnabled.newValue !== false;
-        syncRoute();
-      }
       if (changes[SEEN_WORKS_STORAGE_KEY]) {
         replaceSeenWorkIds(changes[SEEN_WORKS_STORAGE_KEY].newValue);
         syncSeenState();
@@ -123,7 +114,7 @@
     });
 
     const observer = new MutationObserver(mutations => {
-      if (!enabled || !isWorkbenchRoute()) return;
+      if (!isWorkbenchRoute()) return;
       if (mutations.some(mutation => mutation.addedNodes.length > 0)) scheduleScan();
     });
     observer.observe(document.documentElement, { childList: true, subtree: true });
@@ -133,12 +124,12 @@
   }
 
   function syncRoute() {
-    if (!enabled || !isWorkbenchRoute()) {
+    if (!isWorkbenchRoute()) {
       deactivate();
       return;
     }
     ensureUI();
-    if (!workspaceVisible && !shell.dataset.userCollapsed) showWorkbench();
+    if (!workspaceVisible) showWorkbench();
     scheduleScan();
   }
 
@@ -178,7 +169,7 @@
           --ppw-danger:#ff6682;--ppw-success:#4bd79b;
         }
       }
-      .ppw-shell[hidden], .ppw-launcher[hidden] { display:none; }
+      .ppw-shell[hidden] { display:none; }
       .ppw-topbar {
         height:58px;flex:0 0 58px;display:flex;align-items:center;gap:12px;padding:0 14px;
         background:var(--ppw-surface);border-bottom:1px solid var(--ppw-line);
@@ -270,8 +261,6 @@
       .ppw-toast[hidden] { display:none; }
       .ppw-batch-bar { position:absolute;left:50%;bottom:108px;translate:-50% 0;display:flex;align-items:center;gap:8px;padding:7px;border:1px solid var(--ppw-line);border-radius:11px;background:var(--ppw-surface);box-shadow:0 10px 32px rgb(0 0 0/.24);z-index:4; }
       .ppw-batch-bar[hidden] { display:none; }
-      .ppw-launcher { position:absolute;right:20px;top:74px;pointer-events:auto;border:1px solid rgb(255 255 255/.65);border-radius:999px;padding:11px 16px;background:#0096fa;color:#fff;box-shadow:0 8px 30px rgb(0 0 0/.3);cursor:pointer;font:600 14px/1.2 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
-      .ppw-launcher:hover { filter:brightness(.96);transform:translateY(-1px); }
       .focus .ppw-topbar, .focus .ppw-browser, .focus .ppw-resizer, .focus .ppw-details, .focus .ppw-shortcuts { display:none; }
       .focus .ppw-body { grid-template-columns:1fr; }
       .focus .ppw-view-head { background:var(--ppw-surface); }
@@ -308,7 +297,6 @@
         <select class="ppw-select" id="ppw-filter" aria-label="Filter artworks">
           <option value="all"></option><option value="unread"></option>
         </select>
-        <button class="ppw-button" id="ppw-original" type="button"></button>
         <button class="ppw-icon-button" id="ppw-folder" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5h6l2 2h10v13H3Z"/><path d="M3 10h18"/></svg></button>
         <button class="ppw-icon-button" id="ppw-settings" type="button">⚙</button>
       </header>
@@ -369,12 +357,6 @@
     `;
     shadow.appendChild(shell);
 
-    launcher = document.createElement('button');
-    launcher.className = 'ppw-launcher';
-    launcher.type = 'button';
-    launcher.hidden = true;
-    shadow.appendChild(launcher);
-
     feed = shadow.getElementById('ppw-feed');
     emptyState = shadow.getElementById('ppw-empty');
     previewImage = shadow.getElementById('ppw-image');
@@ -401,7 +383,6 @@
   function localizeUI() {
     shadow.getElementById('ppw-route-title').textContent = t('workbenchTitle', 'Following feed');
     shadow.getElementById('ppw-feed-title').textContent = t('workbenchUnreadFirst', 'Artwork feed');
-    shadow.getElementById('ppw-original').textContent = t('workbenchOriginal', 'Original page');
     const settingsButton = shadow.getElementById('ppw-settings');
     settingsButton.title = chrome.i18n.getUILanguage().startsWith('zh') ? '工作台设置' : 'Workbench settings';
     settingsButton.setAttribute('aria-label', settingsButton.title);
@@ -421,8 +402,6 @@
     shadow.getElementById('ppw-batch-download').textContent = t('workbenchDownloadSelected', 'Download selected');
     shadow.getElementById('ppw-batch-cancel').textContent = t('workbenchCancelSelection', 'Cancel');
     emptyState.textContent = t('workbenchLoadingFeed', 'Waiting for artworks from the Pixiv feed…');
-    launcher.textContent = `✦ ${t('workbenchOpenWorkbench', 'Return to PixivPlus Workbench')}`;
-    launcher.setAttribute('aria-label', t('workbenchOpenWorkbench', 'Return to PixivPlus Workbench'));
     shadow.getElementById('ppw-feed-page-prefix').textContent = t('workbenchFeedPage', 'Page');
     shadow.getElementById('ppw-feed-page-suffix').textContent = t('workbenchFeedPageSuffix', '');
     feedPrevButton.setAttribute('aria-label', t('workbenchPreviousFeedPage', 'Previous feed page'));
@@ -435,9 +414,7 @@
   }
 
   function bindEvents() {
-    shadow.getElementById('ppw-original').addEventListener('click', showOriginalPage);
     loadOriginalsButton.addEventListener('click', () => preloadCurrentPageOriginals(true));
-    launcher.addEventListener('click', showWorkbench);
     shadow.getElementById('ppw-work-prev').addEventListener('click', () => moveWork(-1));
     shadow.getElementById('ppw-work-next').addEventListener('click', () => moveWork(1));
     feedPrevButton.addEventListener('click', () => navigateFeedPage(currentFeedPage() - 1));
@@ -482,28 +459,14 @@
   }
 
   function showWorkbench() {
-    if (!enabled || !isWorkbenchRoute()) return;
+    if (!isWorkbenchRoute()) return;
     ensureUI();
-    nativeScrollBeforeWorkbench = window.scrollY;
     workspaceVisible = true;
     shell.hidden = false;
-    shell.dataset.userCollapsed = '';
-    launcher.hidden = true;
     window.PixivPlusDownloadPanel?.setWorkbenchActive(true);
     scheduleInfoIslandPosition();
     syncFeedPagination();
     scheduleScan();
-  }
-
-  function showOriginalPage() {
-    workspaceVisible = false;
-    focusMode = false;
-    shell.classList.remove('focus');
-    shell.hidden = true;
-    shell.dataset.userCollapsed = 'true';
-    launcher.hidden = false;
-    window.PixivPlusDownloadPanel?.setWorkbenchActive(false);
-    window.scrollTo({ top: nativeScrollBeforeWorkbench, behavior: 'auto' });
   }
 
   function currentFeedPage() {
@@ -539,7 +502,6 @@
   function deactivate() {
     workspaceVisible = false;
     if (shell) shell.hidden = true;
-    if (launcher) launcher.hidden = true;
     window.PixivPlusDownloadPanel?.setWorkbenchActive(false);
   }
 
@@ -553,7 +515,7 @@
   }
 
   function scanDocument() {
-    if (!enabled || !isWorkbenchRoute()) return;
+    if (!isWorkbenchRoute()) return;
     const discovered = [];
     for (const link of document.querySelectorAll('a[href*="/artworks/"]')) {
       const id = model.extractWorkId(link.href || link.getAttribute('href'));
@@ -1291,7 +1253,6 @@
   window.PixivPlusWorkbench = {
     isActive: () => workspaceVisible && isWorkbenchRoute(),
     show: showWorkbench,
-    showOriginal: showOriginalPage,
     rescan: scheduleScan
   };
 

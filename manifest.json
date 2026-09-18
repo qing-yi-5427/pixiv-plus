@@ -29,12 +29,10 @@
         "lib/workbench-model.js",
         "lib/pixiv-api.js",
         "content/download-panel.js",
-        "content/hover-preview.js",
         "content/bookmark-download.js",
         "content/workbench.js",
         "content/main.js"
       ],
-      "css": ["content/style.css"],
       "run_at": "document_idle"
     }
   ],

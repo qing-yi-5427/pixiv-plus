@@ -102,11 +102,6 @@
   }
   function group(title, ...rows) { return el('section', { class: 'group' }, el('h2', {}, title), ...rows); }
   function dependencies() {
-    const enabled = controls.get('workbenchEnabled')?.read();
-    if (returnButton) returnButton.textContent = enabled ? t('打开工作台 ↗', 'Open workbench ↗') : t('打开 Pixiv ↗', 'Open Pixiv ↗');
-    for (const key of ['workbenchPreloadOriginals', 'workbenchDensity', 'workbenchLeftWidth']) controls.get(key)?.inputs.forEach(input => { input.disabled = !enabled; });
-    const hover = controls.get('hoverPreview')?.read();
-    for (const key of ['hoverDelay', 'previewBehavior']) controls.get(key)?.inputs.forEach(input => { input.disabled = !hover; });
     const warning = document.getElementById('overwrite-warning');
     if (warning) warning.hidden = controls.get('duplicatePolicy').read() !== 'overwrite';
   }
@@ -137,7 +132,7 @@
       if (candidates[0]) {
         await chrome.tabs.update(candidates[0].id, { active: true });
         await chrome.windows.update(candidates[0].windowId, { focused: true });
-        if (settings.workbenchEnabled) await chrome.tabs.sendMessage(candidates[0].id, { type: 'showWorkbench' }).catch(() => {});
+        await chrome.tabs.sendMessage(candidates[0].id, { type: 'showWorkbench' }).catch(() => {});
       } else await chrome.tabs.create({ url: 'https://www.pixiv.net/bookmark_new_illust.php' });
       if (!fullPage) window.close();
     } catch { setStatus(t('无法打开 Pixiv，请稍后重试', 'Could not open Pixiv. Try again.'), 'error'); }
@@ -157,7 +152,7 @@
       folderName.textContent = response.name || t('尚未选择下载目录', 'No download folder selected');
       folderHint.textContent = response.name && response.permission !== 'granted'
         ? t('目录已记住，下次下载时需要重新授权。也可以在工作台右上角更换目录。', 'Folder remembered. Access is needed on the next download. Change it from the workbench toolbar.')
-        : t('点击工作台右上角的文件夹按钮选择；原版页面可在首次下载时选择。', 'Use the folder button in the workbench toolbar, or select a folder on the first download from an original page.');
+        : t('点击工作台右上角的文件夹按钮选择或更换下载目录。', 'Choose or change your download folder using the folder button in the workbench toolbar.');
       resetFolder.disabled = !response.name;
     } catch {
       folderName.textContent = t('需要连接 Pixiv 页面', 'Connect a Pixiv page');
@@ -212,16 +207,11 @@
       densityInputs.push(input); density.append(el('label', { class: 'choice' }, input, label));
     }
     register('workbenchDensity', densityInputs, () => densityInputs.find(input => input.checked)?.value);
-    content.append(panel('browse', t('让浏览顺手一些', 'Make room for the artwork'), t('调整作品流、原图加载和预览方式。', 'Tune your feed, image loading, and previews.'),
+    content.append(panel('browse', t('让浏览顺手一些', 'Make room for the artwork'), t('调整工作台作品流与原图加载。', 'Tune the workbench feed and original-image loading.'),
       group(t('关注动态工作台', 'FOLLOWING FEED'),
-        toggle('workbenchEnabled', t('启用工作台', 'Enable workbench'), t('在关注动态页使用左右分栏，可随时返回原版。', 'Use the split view on your following feed. Switch back anytime.')),
         row('workbenchDensity', t('作品流密度', 'Thumbnail density'), t('与工作台里的密度按钮同步。', 'Synced with the density control in the workbench.'), density, true),
         range('workbenchLeftWidth', t('作品流宽度', 'Feed width'), t('也可以直接拖动工作台的分隔线。', 'You can also drag the divider in the workbench.'), 240, 520, 1, 'px'),
         toggle('workbenchPreloadOriginals', t('自动加载本页原图', 'Preload page originals'), t('每件作品预加载首张原图；多图作品不会加载所有页。会增加流量。', 'Preload the first original of each work, not every manga page. Uses more data.'))),
-      group(t('原版页面预览', 'PREVIEWS ON PIXIV'),
-        toggle('hoverPreview', t('悬停预览', 'Hover preview'), t('鼠标停在原版页面的缩略图上时显示预览。', 'Preview thumbnails when hovering on the original Pixiv pages.')),
-        range('hoverDelay', t('触发延迟', 'Hover delay'), t('减少误触；0 ms 表示立即显示。', 'Prevent accidental previews. Set 0 ms for instant previews.'), 0, 3000, 50, 'ms'),
-        select('previewBehavior', t('预览方式', 'Preview style'), t('只影响原版页面的悬停预览。', 'Only affects hover previews on original pages.'), [['peek', t('侧边预览', 'Side preview')], ['immersive', t('沉浸查看', 'Immersive viewer')]])),
       el('div', { class: 'shortcut-list' }, ...[['J / K', t('切换作品', 'Switch works')], ['← / →', t('作品翻页', 'Change page')], ['Space', t('专注模式', 'Focus mode')]].map(([key, label]) => el('span', {}, el('kbd', {}, key), ` ${label}`)))));
     folderName = el('div', { class: 'folder-name' }, t('正在读取目录…', 'Checking folder…'));
     folderHint = hint('');
