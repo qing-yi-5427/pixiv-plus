@@ -30,6 +30,7 @@
   "workbenchLoadOriginals": { "message": "Load page originals" },
   "workbenchOriginalsProgress": { "message": "Originals {done}/{total}" },
   "workbenchOriginalsReady": { "message": "Originals ready" },
+  "workbenchOriginalsPaused": { "message": "Original preload paused" },
   "workbenchOriginalsPartial": { "message": "{count} originals could not be loaded" },
   "workbenchFilterAll": { "message": "All artworks" },
   "workbenchFilterUnread": { "message": "Unread" },

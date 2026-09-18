@@ -7,6 +7,10 @@
 - [ ] Verify density, width, preload, download and naming settings persist; check save-failure feedback.
 - [ ] Verify existing read state, download history, and directory access survive the upgrade.
 - [ ] Reload the unpacked extension and refresh existing Pixiv tabs before browser QA.
+- [ ] Start original preloading, leave the workbench, and verify remaining preloads stop without affecting downloads.
+- [ ] Leave a preloading tab hidden for 10 minutes; return and verify only unfinished works resume.
+- [ ] Turn off automatic preloading during a run; verify it stays stopped and the current image stays visible.
+- [ ] Verify metadata cleanup does not trigger repeat original-image requests or clear read state/history.
 
 The checklist below records the previous 2.1.0 release; its submitted ZIP must not be overwritten by development builds.
 

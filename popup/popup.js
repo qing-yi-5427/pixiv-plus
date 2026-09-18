@@ -211,7 +211,8 @@
       group(t('关注动态工作台', 'FOLLOWING FEED'),
         row('workbenchDensity', t('作品流密度', 'Thumbnail density'), t('与工作台里的密度按钮同步。', 'Synced with the density control in the workbench.'), density, true),
         range('workbenchLeftWidth', t('作品流宽度', 'Feed width'), t('也可以直接拖动工作台的分隔线。', 'You can also drag the divider in the workbench.'), 240, 520, 1, 'px'),
-        toggle('workbenchPreloadOriginals', t('自动加载本页原图', 'Preload page originals'), t('每件作品预加载首张原图；多图作品不会加载所有页。会增加流量。', 'Preload the first original of each work, not every manga page. Uses more data.'))),
+        toggle('workbenchPreloadOriginals', t('自动加载本页原图', 'Preload page originals'), t('每件作品仅预加载首张原图，会增加流量。后台超过 10 分钟暂停，返回后继续。', 'Preload only the first original of each work. Uses more data. Pauses after 10 minutes in the background; resumes on return.'))),
+      hint(t('浏览资源自动管理：作品详情保留 5 分钟、最多 200 条；原图缓存由浏览器管理。不影响已读状态和下载文件。', 'Browsing resources are managed automatically: artwork details expire after 5 minutes, with up to 200 entries. Image caching is managed by the browser. Read state and downloaded files are kept.')),
       el('div', { class: 'shortcut-list' }, ...[['J / K', t('切换作品', 'Switch works')], ['← / →', t('作品翻页', 'Change page')], ['Space', t('专注模式', 'Focus mode')]].map(([key, label]) => el('span', {}, el('kbd', {}, key), ` ${label}`)))));
     folderName = el('div', { class: 'folder-name' }, t('正在读取目录…', 'Checking folder…'));
     folderHint = hint('');

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Added cancellation of image/metadata preloads on leaving the workbench or after 10 minutes in the background, with unfinished-only resumption.
+- Bounded artwork/user metadata caches to 200/100 entries with five-minute expiry and least-recently-used eviction; removed the non-expiring workbench metadata cache.
+- Release offscreen image handlers, sources and timers on every completion path; keep completion markers separate to prevent cleanup/reload loops.
+- Kept directory selection, read state, download history and downloaded files unchanged.
 - Rebuilt settings as a workbench-styled popup and full options page with browsing, downloads, and filename sections.
 - Added live feed density/width settings, keyboard-accessible controls, and light/dark system themes.
 - Added validated partial settings writes and truthful save/error states.

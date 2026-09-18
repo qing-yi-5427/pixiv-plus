@@ -10,8 +10,8 @@
   const store = model.createStore();
   const sourceCards = new Map();
   const thumbElements = new Map();
-  const workInfoCache = new Map();
-  const preloadedOriginalUrls = new Set();
+  // Lightweight per-feed completion markers are not image/metadata caches.
+  // Keep them across memory cleanup so automatic preload never loops.
   const preloadedOriginalWorkIds = new Set();
   const failedOriginalWorkIds = new Set();
   const seenWorkIds = new Set();
@@ -60,7 +60,15 @@
   let preloadOriginalsByDefault = false;
   let originalMode = false;
   let preloadRun = null;
+  let preloadController = null;
   let autoPreloadTimer = null;
+  let manualPreloadRequested = false;
+  const BACKGROUND_IDLE_MS = 10 * 60 * 1000;
+  let hiddenSince = document.hidden ? Date.now() : null;
+  let backgroundIdleTimer = null;
+  let pageSuspended = false;
+  let nextPrefetchController = null;
+  let nextPrefetchCancel = null;
 
   const t = (key, fallback) => chrome.i18n.getMessage(key) || fallback;
 
@@ -109,6 +117,9 @@
         if (preloadOriginalsByDefault) {
           originalMode = true;
           scheduleAutoOriginalPreload();
+        } else {
+          manualPreloadRequested = false;
+          stopBackgroundLoading();
         }
       }
     });
@@ -120,10 +131,23 @@
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
     window.addEventListener('popstate', syncRoute);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('pagehide', () => {
+      pageSuspended = true;
+      clearTimeout(backgroundIdleTimer);
+      stopBackgroundLoading();
+    });
+    window.addEventListener('pageshow', () => {
+      pageSuspended = false;
+      syncRoute();
+      onVisibilityChange();
+    });
+    onVisibilityChange();
     setInterval(syncRoute, 800);
   }
 
   function syncRoute() {
+    if (pageSuspended) return;
     if (!isWorkbenchRoute()) {
       deactivate();
       return;
@@ -459,7 +483,7 @@
   }
 
   function showWorkbench() {
-    if (!isWorkbenchRoute()) return;
+    if (!isWorkbenchRoute() || pageSuspended) return;
     ensureUI();
     workspaceVisible = true;
     shell.hidden = false;
@@ -500,7 +524,10 @@
   }
 
   function deactivate() {
+    if (!workspaceVisible) return;
     workspaceVisible = false;
+    stopBackgroundLoading();
+    window.PixivPlusAPI.pruneCaches();
     if (shell) shell.hidden = true;
     window.PixivPlusDownloadPanel?.setWorkbenchActive(false);
   }
@@ -537,7 +564,7 @@
     syncFeedPagination();
     applyFilter();
     if (!currentWorkId && store.size > 0) selectWork(store.all()[0].id, false);
-    if (preloadOriginalsByDefault || originalMode) scheduleAutoOriginalPreload();
+    if (preloadOriginalsByDefault || manualPreloadRequested) scheduleAutoOriginalPreload();
   }
 
   function addThumbnail(record) {
@@ -706,7 +733,7 @@
     const page = currentInfo.pageUrls[currentPage];
     const originalUrl = page?.original || currentInfo.urls.original || '';
     const regularUrl = page?.regular || currentInfo.urls.regular || currentInfo.urls.small;
-    const url = originalUrl && (originalMode || preloadedOriginalUrls.has(originalUrl))
+    const url = originalUrl && originalMode
       ? originalUrl
       : (regularUrl || originalUrl);
     loading.hidden = false;
@@ -1031,39 +1058,74 @@
     }
   }
 
-  function getWorkInfoCached(id) {
-    const key = String(id);
-    if (!workInfoCache.has(key)) {
-      const request = window.PixivPlusAPI.getWorkInfo(key).catch(fetchError => {
-        workInfoCache.delete(key);
-        throw fetchError;
-      });
-      workInfoCache.set(key, request);
+  function getWorkInfoCached(id, signal) {
+    // One bounded, expiring cache in the API layer. currentInfo separately
+    // retains the visible artwork, even after its cache entry expires.
+    return window.PixivPlusAPI.getWorkInfo(String(id), { signal });
+  }
+
+  function canLoadInBackground() {
+    return !pageSuspended && workspaceVisible && isWorkbenchRoute()
+      && (hiddenSince === null || Date.now() - hiddenSince < BACKGROUND_IDLE_MS);
+  }
+
+  function stopBackgroundLoading() {
+    clearTimeout(autoPreloadTimer);
+    autoPreloadTimer = null;
+    preloadController?.abort();
+    nextPrefetchCancel?.();
+    nextPrefetchCancel = null;
+    nextPrefetchController?.abort();
+    nextPrefetchController = null;
+  }
+
+  function onVisibilityChange() {
+    clearTimeout(backgroundIdleTimer);
+    if (document.hidden) {
+      if (hiddenSince === null) hiddenSince = Date.now();
+      backgroundIdleTimer = setTimeout(() => {
+        stopBackgroundLoading();
+        window.PixivPlusAPI.pruneCaches();
+      }, Math.max(0, BACKGROUND_IDLE_MS - (Date.now() - hiddenSince)));
+    } else {
+      hiddenSince = null;
+      window.PixivPlusAPI.pruneCaches();
+      scheduleAutoOriginalPreload();
+      if (currentWorkId) prefetchNext();
     }
-    return workInfoCache.get(key);
   }
 
   function scheduleAutoOriginalPreload() {
-    if ((!preloadOriginalsByDefault && !originalMode) || !workspaceVisible || store.size === 0) return;
+    if ((!preloadOriginalsByDefault && !manualPreloadRequested) || !canLoadInBackground() || store.size === 0) return;
     clearTimeout(autoPreloadTimer);
     autoPreloadTimer = setTimeout(() => preloadCurrentPageOriginals(false), 500);
   }
 
-  function preloadOriginalImage(url) {
-    if (!url || preloadedOriginalUrls.has(url)) return Promise.resolve();
+  function preloadOriginalImage(url, signal) {
+    if (signal.aborted) return Promise.reject(new DOMException('Cancelled', 'AbortError'));
+    if (!url) return Promise.reject(new Error('ORIGINAL_URL_MISSING'));
     return new Promise((resolve, reject) => {
       const image = new Image();
-      const timer = setTimeout(() => reject(new Error('ORIGINAL_PRELOAD_TIMEOUT')), 45000);
+      let settled = false;
+      const finish = (failure) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal.removeEventListener('abort', abort);
+        image.onload = null;
+        image.onerror = null;
+        // Stop pending image work and release the offscreen image reference.
+        // This does not clear the browser HTTP cache or the displayed image.
+        image.removeAttribute('src');
+        if (failure) reject(failure);
+        else resolve();
+      };
+      const abort = () => finish(new DOMException('Cancelled', 'AbortError'));
+      const timer = setTimeout(() => finish(new Error('ORIGINAL_PRELOAD_TIMEOUT')), 45000);
       image.decoding = 'async';
-      image.onload = () => {
-        clearTimeout(timer);
-        preloadedOriginalUrls.add(url);
-        resolve();
-      };
-      image.onerror = () => {
-        clearTimeout(timer);
-        reject(new Error('ORIGINAL_PRELOAD_FAILED'));
-      };
+      image.onload = () => finish();
+      image.onerror = () => finish(new Error('ORIGINAL_PRELOAD_FAILED'));
+      signal.addEventListener('abort', abort, { once: true });
       image.src = url;
     });
   }
@@ -1080,6 +1142,8 @@
         .replace('{done}', String(done)).replace('{total}', String(total));
     } else if (state === 'ready') {
       label.textContent = t('workbenchOriginalsReady', 'Originals ready');
+    } else if (state === 'paused') {
+      label.textContent = t('workbenchOriginalsPaused', 'Original preload paused');
     } else {
       label.textContent = t('workbenchLoadOriginals', 'Load page originals');
     }
@@ -1089,14 +1153,15 @@
     if (preloadRun) return preloadRun;
     if (manual) {
       originalMode = true;
+      manualPreloadRequested = true;
       failedOriginalWorkIds.clear();
     }
+    if (!canLoadInBackground() || (!preloadOriginalsByDefault && !manualPreloadRequested)) return Promise.resolve();
     const records = store.all().filter(record => (
       !preloadedOriginalWorkIds.has(record.id) && !failedOriginalWorkIds.has(record.id)
     ));
     if (!records.length) {
-      updatePreloadButton(0, 0, 'ready');
-      if (currentInfo && originalMode) showPage(currentPage);
+      updatePreloadButton(0, 0, failedOriginalWorkIds.size ? 'idle' : 'ready');
       return Promise.resolve();
     }
 
@@ -1104,17 +1169,22 @@
     let cursor = 0;
     let finished = 0;
     let failed = 0;
+    const controller = new AbortController();
+    preloadController = controller;
+    const { signal } = controller;
     updatePreloadButton(0, total, 'loading');
 
     preloadRun = (async () => {
       const worker = async () => {
-        while (cursor < records.length) {
+        while (cursor < records.length && !signal.aborted && canLoadInBackground()) {
           const record = records[cursor++];
           try {
-            const info = await getWorkInfoCached(record.id);
+            const info = await getWorkInfoCached(record.id, signal);
+            if (signal.aborted || !canLoadInBackground()) return;
             const originalUrl = info.pageUrls?.[0]?.original || info.urls?.original || '';
             if (!originalUrl) throw new Error('ORIGINAL_URL_MISSING');
-            await preloadOriginalImage(originalUrl);
+            await preloadOriginalImage(originalUrl, signal);
+            if (signal.aborted || !canLoadInBackground()) return;
             preloadedOriginalWorkIds.add(record.id);
             const updated = store.update(record.id, {
               title: info.title,
@@ -1126,43 +1196,76 @@
             });
             updateThumbnail(updated);
           } catch (preloadError) {
+            if (signal.aborted || preloadError.name === 'AbortError') return;
             failed++;
             failedOriginalWorkIds.add(record.id);
             console.warn('[PixivPlus] Original preload failed', record.id, preloadError);
           } finally {
-            finished++;
-            updatePreloadButton(finished, total, 'loading');
+            if (!signal.aborted && canLoadInBackground()) {
+              finished++;
+              updatePreloadButton(finished, total, 'loading');
+            }
           }
         }
       };
       await Promise.all(Array.from({ length: Math.min(3, total) }, worker));
     })().finally(() => {
       preloadRun = null;
+      preloadController = null;
+      if (signal.aborted || !canLoadInBackground()) {
+        updatePreloadButton(finished, total, 'paused');
+        // A quick hide/show or route return may happen before abort settles.
+        // Resume only if still requested; completed IDs remain untouched.
+        scheduleAutoOriginalPreload();
+        return;
+      }
       updatePreloadButton(finished, total, failed === total ? 'idle' : 'ready');
-      if (currentInfo && originalMode) showPage(currentPage);
+      if (currentInfo && originalMode) {
+        const url = currentInfo.pageUrls[currentPage]?.original || currentInfo.urls.original;
+        if (url && previewImage.getAttribute('src') !== url) showPage(currentPage);
+      }
       const message = failed
         ? t('workbenchOriginalsPartial', '{count} originals could not be loaded').replace('{count}', String(failed))
         : t('workbenchOriginalsReady', 'Originals ready');
       showToast(message);
-      if (preloadOriginalsByDefault || originalMode) scheduleAutoOriginalPreload();
+      if (preloadOriginalsByDefault || manualPreloadRequested) scheduleAutoOriginalPreload();
     });
     return preloadRun;
   }
 
   function prefetchNext() {
+    nextPrefetchCancel?.();
+    nextPrefetchController?.abort();
+    nextPrefetchCancel = null;
+    nextPrefetchController = null;
+    if (!canLoadInBackground()) return;
     const index = store.indexOf(currentWorkId);
     const next = store.all()[index + 1];
     if (!next || next.loaded) return;
-    const prefetch = () => getWorkInfoCached(next.id).then(info => {
-      const updated = store.update(next.id, {
-        title: info.title, artist: info.artist,
-        thumbUrl: info.urls.small || info.urls.regular || next.thumbUrl,
-        pageCount: info.pageCount, isUgoira: info.isUgoira, loaded: true
+    const controller = new AbortController();
+    nextPrefetchController = controller;
+    const prefetch = () => {
+      nextPrefetchCancel = null;
+      if (!canLoadInBackground() || controller.signal.aborted) return;
+      return getWorkInfoCached(next.id, controller.signal).then(info => {
+        if (!canLoadInBackground() || controller.signal.aborted) return;
+        const updated = store.update(next.id, {
+          title: info.title, artist: info.artist,
+          thumbUrl: info.urls.small || info.urls.regular || next.thumbUrl,
+          pageCount: info.pageCount, isUgoira: info.isUgoira, loaded: true
+        });
+        updateThumbnail(updated);
+      }).catch(() => {}).finally(() => {
+        if (nextPrefetchController === controller) nextPrefetchController = null;
       });
-      updateThumbnail(updated);
-    }).catch(() => {});
-    if ('requestIdleCallback' in window) window.requestIdleCallback(prefetch, { timeout: 1200 });
-    else setTimeout(prefetch, 700);
+    };
+    if ('requestIdleCallback' in window) {
+      const task = window.requestIdleCallback(prefetch, { timeout: 1200 });
+      nextPrefetchCancel = () => window.cancelIdleCallback(task);
+    } else {
+      const task = setTimeout(prefetch, 700);
+      nextPrefetchCancel = () => clearTimeout(task);
+    }
   }
 
   function updateCounts() {

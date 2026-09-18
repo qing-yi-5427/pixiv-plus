@@ -17,7 +17,7 @@ function response(body, status = 200) {
   };
 }
 
-function loadApi(fetchImpl, settings = {}, csrfToken = '') {
+function loadApi(fetchImpl, settings = {}, csrfToken = '', overrides = {}) {
   const storage = {
     filenameTemplate: '{artist}-{title}-{id}',
     ...settings
@@ -39,10 +39,14 @@ function loadApi(fetchImpl, settings = {}, csrfToken = '') {
     },
     fetch: fetchImpl,
     console,
+    DOMException,
+    clearTimeout,
+    setInterval: () => 0,
     setTimeout: callback => {
       callback();
       return 0;
-    }
+    },
+    ...overrides
   };
   vm.createContext(context);
   vm.runInContext(apiSource, context);
@@ -186,4 +190,114 @@ test('bookmark actions use Pixiv AJAX endpoints without opening another page', a
   });
   assert.equal(calls[1].url, '/ajax/illusts/bookmarks/delete');
   assert.deepEqual(JSON.parse(calls[1].options.body), { bookmark_id: '99' });
+});
+
+test('metadata cache expires after five minutes without mutating visible artwork', async () => {
+  let now = 1000000;
+  let calls = 0;
+  let sweep;
+  const api = loadApi(async () => {
+    calls++;
+    return response({ body: workBody({ title: `Version ${calls}` }) });
+  }, {}, '', {
+    Date: { now: () => now },
+    setInterval: (fn, ms) => { assert.equal(ms, 60000); sweep = fn; }
+  });
+  const visible = await api.getWorkInfo('42');
+  now += 299999;
+  assert.equal(await api.getWorkInfo(42), visible);
+  now++;
+  sweep();
+  assert.notEqual(await api.getWorkInfo('42'), visible);
+  assert.equal(calls, 2);
+  assert.equal(visible.title, 'Version 1');
+});
+
+test('artwork cache uses least-recently-used eviction at 200 entries', async () => {
+  let calls = 0;
+  const api = loadApi(async () => { calls++; return response({ body: workBody() }); });
+  for (let id = 1; id <= 200; id++) await api.getWorkInfo(id);
+  await api.getWorkInfo(1); // Protect the most recently accessed entry.
+  await api.getWorkInfo(201);
+  await api.getWorkInfo(1);
+  assert.equal(calls, 201);
+  await api.getWorkInfo(2);
+  assert.equal(calls, 202);
+});
+
+test('user metadata is bounded to 100 entries', async () => {
+  let calls = 0;
+  const api = loadApi(async () => { calls++; return response({ body: { name: 'Artist' } }); });
+  for (let id = 1; id <= 101; id++) await api.getUserInfo(id);
+  await api.getUserInfo(101);
+  assert.equal(calls, 101);
+  await api.getUserInfo(1);
+  assert.equal(calls, 102);
+});
+
+test('aborted queued preload never starts a request or poisons the queue', async () => {
+  let release;
+  const calls = [];
+  const api = loadApi(async url => {
+    calls.push(url);
+    if (url.endsWith('/1')) await new Promise(resolve => { release = resolve; });
+    return response({ body: workBody() });
+  });
+  const first = api.getWorkInfo('1');
+  await new Promise(resolve => setImmediate(resolve));
+  const controller = new AbortController();
+  const cancelled = api.getWorkInfo('2', { signal: controller.signal });
+  const rejected = assert.rejects(cancelled, { name: 'AbortError' });
+  controller.abort();
+  release();
+  await first;
+  await rejected;
+  await api.getWorkInfo('3');
+  assert.deepEqual(calls, ['/ajax/illust/1', '/ajax/illust/3']);
+});
+
+test('aborting a rate-limit wait cancels its timer and allows foreground requests', async () => {
+  const waits = new Map();
+  let token = 0;
+  let calls = 0;
+  const api = loadApi(async () => {
+    calls++;
+    return calls === 1 ? response({}, 429) : response({ body: workBody() });
+  }, {}, '', {
+    Date: { now: () => 1000000 },
+    setTimeout: (fn, ms) => { const id = ++token; waits.set(id, { fn, ms }); return id; },
+    clearTimeout: id => waits.delete(id)
+  });
+  const controller = new AbortController();
+  const pending = api.getWorkInfo('1', { signal: controller.signal });
+  const rejected = assert.rejects(pending, { name: 'AbortError' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal([...waits.values()][0].ms, 60000);
+  controller.abort();
+  await rejected;
+  assert.equal(waits.size, 0);
+  const foreground = api.getWorkInfo('2');
+  await new Promise(resolve => setImmediate(resolve));
+  for (const [id, timer] of waits) { waits.delete(id); timer.fn(); }
+  await foreground;
+  assert.equal(calls, 2);
+});
+
+test('cancelling an in-flight metadata request propagates the signal to fetch', async () => {
+  let receivedSignal;
+  const api = loadApi(async (url, { signal }) => {
+    if (url.endsWith('/1')) {
+      receivedSignal = signal;
+      return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }));
+    }
+    return response({ body: workBody() });
+  });
+  const controller = new AbortController();
+  const pending = api.getWorkInfo('1', { signal: controller.signal });
+  const rejected = assert.rejects(pending, { name: 'AbortError' });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(receivedSignal, controller.signal);
+  controller.abort();
+  await rejected;
+  assert.equal((await api.getWorkInfo('2')).id, '42');
 });

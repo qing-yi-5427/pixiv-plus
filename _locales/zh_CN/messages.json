@@ -30,6 +30,7 @@
   "workbenchLoadOriginals": { "message": "加载本页原图" },
   "workbenchOriginalsProgress": { "message": "原图 {done}/{total}" },
   "workbenchOriginalsReady": { "message": "本页原图已加载" },
+  "workbenchOriginalsPaused": { "message": "原图预加载已暂停" },
   "workbenchOriginalsPartial": { "message": "有 {count} 张原图加载失败" },
   "workbenchFilterAll": { "message": "全部作品" },
   "workbenchFilterUnread": { "message": "未读作品" },
