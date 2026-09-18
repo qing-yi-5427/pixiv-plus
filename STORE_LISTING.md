@@ -6,7 +6,7 @@ PixivPlus turns Pixiv's followed-artworks feed into a split-view workbench and l
 
 ## Permission justifications
 
-- **storage** — Saves extension preferences and download history locally so status and duplicate detection remain available across Pixiv tabs and browser restarts.
+- **storage** — Saves extension preferences, read state and download history locally across Pixiv tabs and browser restarts. Duplicate-file checks use the selected destination folder.
 - **declarativeNetRequest** — Adds the Pixiv Referer header required by `i.pximg.net`; the bundled rule is limited to Pixiv image requests.
 - **www.pixiv.net host access** — Reads the metadata for artwork the user is viewing and injects the preview/download interface on Pixiv pages.
 - **i.pximg.net host access** — Retrieves thumbnails, original images, and Ugoira source archives that the user chooses to preview or download.
@@ -31,6 +31,8 @@ PixivPlus is a focused browsing and download companion for Pixiv. Its following-
 
 Downloads run through a visible queue with bounded concurrency, real cancellation, retry, duplicate detection, filename templates, optional Pixiv tag metadata, and persistent history. Multi-page works include page selection, format and resolution details, Shift range selection, and estimated download size. Ugoira works can be saved as the original frame ZIP together with frame timing JSON.
 
+Thin thumbnail progress strips show which first-page originals are still loading or cached. Preloading, previews and downloads share the original bytes: a cache hit saves without another image transfer. The tab-local cache holds up to 128MB, expires after 10 idle minutes and is discarded on page reload. Other pages of multi-page works and Ugoira ZIPs are downloaded separately when requested.
+
 PixivPlus contains no advertising, analytics, tracking, or remotely hosted code. Settings and download history remain on your device.
 
 ### Search terms
@@ -48,6 +50,8 @@ Pixiv, artwork, image downloader, original image, illustration, Ugoira, gallery
 PixivPlus 是一个专注于 Pixiv 浏览与原图下载的浏览器扩展。关注动态工作台将缩略图浏览器放在左侧，将大幅原比例预览放在右侧，支持持久已读状态、未读筛选、密度调整、Shift 连选、键盘导航和专注模式。可一键加载当前作品流每个作品的首张原图，也可设置为自动加载。设置页围绕浏览、下载与文件命名组织。
 
 所有下载都进入可见的任务队列，支持并发限制、真正取消、失败重试、重复文件检测、文件名模板、可选标签元数据以及本地下载历史。多图作品支持页面选择、格式和分辨率信息、Shift 连选以及预计下载体积。Ugoira 动图可保存原始帧 ZIP 和对应的帧延迟 JSON。
+
+缩略图底部细进度条显示首张原图的加载与缓存状态。预载、预览和下载共享原图数据，命中缓存后直接保存，不重复传输图片。每个标签页最多保留 128MB 原图缓存，10 分钟未使用自动释放，刷新页面清空。多图作品的其他页面和动图 ZIP 在需要时另行下载。
 
 PixivPlus 不包含广告、分析、追踪或远程托管代码。设置和下载历史均保存在用户设备本地。
 

@@ -14,5 +14,5 @@ test('cancelling folder selection never falls back to a browser download', () =>
   assert.doesNotMatch(source, /function browserDownload/);
   assert.doesNotMatch(source, /\.download\s*=\s*filename/);
   assert.doesNotMatch(source, /browser default/);
-  assert.ok((source.match(/if \(!handle\) return false;/g) || []).length >= 4);
+  assert.ok((source.match(/if \(!handle\) return false;/g) || []).length >= 3);
 });

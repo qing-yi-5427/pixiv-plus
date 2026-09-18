@@ -212,7 +212,7 @@
         row('workbenchDensity', t('作品流密度', 'Thumbnail density'), t('与工作台里的密度按钮同步。', 'Synced with the density control in the workbench.'), density, true),
         range('workbenchLeftWidth', t('作品流宽度', 'Feed width'), t('也可以直接拖动工作台的分隔线。', 'You can also drag the divider in the workbench.'), 240, 520, 1, 'px'),
         toggle('workbenchPreloadOriginals', t('自动加载本页原图', 'Preload page originals'), t('每件作品仅预加载首张原图，会增加流量。后台超过 10 分钟暂停，返回后继续。', 'Preload only the first original of each work. Uses more data. Pauses after 10 minutes in the background; resumes on return.'))),
-      hint(t('浏览资源自动管理：作品详情保留 5 分钟、最多 200 条；原图缓存由浏览器管理。不影响已读状态和下载文件。', 'Browsing resources are managed automatically: artwork details expire after 5 minutes, with up to 200 entries. Image caching is managed by the browser. Read state and downloaded files are kept.')),
+      hint(t('作品详情保留 5 分钟、最多 200 条；原图内存缓存每个标签页最多 128MB，10 分钟未使用自动释放。绿色细条代表首张原图可直接保存，刷新页面会清空。不会删除已读记录或下载文件。', 'Artwork details expire after 5 minutes (200 entries). Original bytes use up to 128MB per tab and expire after 10 idle minutes. A green strip means the first original is ready to save; reloading clears this cache. Read state and files are kept.')),
       el('div', { class: 'shortcut-list' }, ...[['J / K', t('切换作品', 'Switch works')], ['← / →', t('作品翻页', 'Change page')], ['Space', t('专注模式', 'Focus mode')]].map(([key, label]) => el('span', {}, el('kbd', {}, key), ` ${label}`)))));
     folderName = el('div', { class: 'folder-name' }, t('正在读取目录…', 'Checking folder…'));
     folderHint = hint('');
@@ -234,7 +234,7 @@
         select('downloadConcurrency', t('同时下载', 'Concurrent downloads'), t('较低并发更适合不稳定的网络。', 'Lower concurrency works better on unstable connections.'), [1,2,3,4,5,6].map(n => [String(n), t(`${n} 个任务`, `${n} tasks`)])),
         select('duplicatePolicy', t('遇到同名文件', 'Existing filenames'), t('按下载目录中的实际文件处理。', 'Checks the actual files in your download folder.'), [['skip', t('跳过', 'Skip')], ['rename', t('自动重命名', 'Auto rename')], ['overwrite', t('覆盖', 'Overwrite')]]),
         select('multiDownloadDefault', t('下载多图作品', 'Multi-page works'), t('作品级下载按钮的默认行为。', 'Default behavior of the artwork download button.'), [['ask', t('先选择页码', 'Choose pages')], ['all', t('下载全部', 'Download all')]])), overwriteWarning,
-      el('p', { class: 'notice' }, t('首次下载时会请求目录访问权限。取消选择不会启动下载，也不会退回浏览器下载器。', 'The first download asks for folder access. Cancelling leaves the download unstarted; it does not fall back to browser downloads.'))));
+      el('p', { class: 'notice' }, t('首次下载会请求目录访问权限，建议选择专用下载文件夹。授权属于 Pixiv 站点；忘记目录不等于撤销浏览器权限。取消选择不会启动下载或退回浏览器下载器。已排队任务保留原目录，新任务使用新目录。', 'Choose a dedicated download folder. Access belongs to the Pixiv site origin; forgetting a folder does not revoke browser permissions. Cancelling starts no download and never falls back to browser downloads. Queued tasks keep their original folder; new tasks use the new folder.'))));
     filenameInput = el('input', { class: 'text-input', type: 'text', id: 'filenameTemplate', maxlength: '160', spellcheck: 'false', autocomplete: 'off', 'aria-describedby': 'filenameTemplate-hint filename-error' });
     controls.set('filenameTemplate', { inputs: [filenameInput], read: () => filenameInput.value });
     filenameError = el('p', { class: 'error', id: 'filename-error', role: 'alert', hidden: '' });

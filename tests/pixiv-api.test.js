@@ -40,10 +40,12 @@ function loadApi(fetchImpl, settings = {}, csrfToken = '', overrides = {}) {
     fetch: fetchImpl,
     console,
     DOMException,
+    AbortController,
+    TextEncoder,
     clearTimeout,
     setInterval: () => 0,
-    setTimeout: callback => {
-      callback();
+    setTimeout: (callback, ms) => {
+      if (ms !== 30000) callback();
       return 0;
     },
     ...overrides
@@ -151,6 +153,47 @@ test('settings preview uses the download filename rules without changing the act
   assert.equal(api.generateFilename(work, 0, '{title}'), '_CON_p0.jpg');
   assert.equal(api.generateFilename(work, 0, '{id}{page}'), '42_p0.jpg');
   assert.equal(api.generateFilename(work, 0), 'Artist-42_p0.jpg');
+});
+
+test('Unicode filenames fit the UTF-8 filesystem byte budget without splitting emoji', () => {
+  const api = loadApi(async () => response({}), { filenameTemplate: '{artist}-{title}-{id}' });
+  for (const title of ['中文'.repeat(100), '🎨🖼️'.repeat(100)]) {
+    const filename = api.generateFilename({ id: '42', artist: '画师'.repeat(50), title, pageCount: 2,
+      pageUrls: [{ original: 'https://i.pximg.net/42.jpg' }] }, 0);
+    assert.ok(Buffer.byteLength(filename, 'utf8') <= 220);
+    assert.equal(Buffer.from(filename).toString('utf8'), filename);
+    assert.ok(filename.endsWith('_p0.jpg'));
+  }
+});
+
+test('foreground metadata runs before queued background preloads', async () => {
+  let release;
+  const calls = [];
+  const api = loadApi(async url => {
+    calls.push(url);
+    if (url.endsWith('/1')) await new Promise(resolve => { release = resolve; });
+    return response({ body: workBody() });
+  });
+  const first = api.getWorkInfo('1');
+  await new Promise(setImmediate);
+  const background = api.getWorkInfo('2');
+  const foreground = api.getWorkInfo('3', { priority: 'foreground' });
+  release(); await Promise.all([first, background, foreground]);
+  assert.deepEqual(calls, ['/ajax/illust/1', '/ajax/illust/3', '/ajax/illust/2']);
+});
+
+test('metadata timeout covers a stalled response body and releases the request queue', async () => {
+  let timeout;
+  const api = loadApi(async (url, { signal }) => {
+    if (url.endsWith('/1')) return { ok: true, status: 200,
+      json: () => new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason))) };
+    return response({ body: workBody() });
+  }, {}, '', { setTimeout: (fn, ms) => { if (ms === 30000) timeout = fn; else fn(); return 0; } });
+  const first = api.getWorkInfo('1');
+  const rejection = assert.rejects(first, { name: 'TimeoutError' });
+  const next = api.getWorkInfo('2');
+  await new Promise(setImmediate); timeout(); await rejection;
+  assert.equal((await next).id, '42');
 });
 
 test('ugoira metadata exposes the source ZIP and frame timing', async () => {
@@ -296,8 +339,9 @@ test('cancelling an in-flight metadata request propagates the signal to fetch', 
   const pending = api.getWorkInfo('1', { signal: controller.signal });
   const rejected = assert.rejects(pending, { name: 'AbortError' });
   await new Promise(resolve => setImmediate(resolve));
-  assert.equal(receivedSignal, controller.signal);
+  assert.ok(receivedSignal);
   controller.abort();
+  assert.equal(receivedSignal.aborted, true);
   await rejected;
   assert.equal((await api.getWorkInfo('2')).id, '42');
 });

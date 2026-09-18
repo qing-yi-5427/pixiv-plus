@@ -14,7 +14,12 @@
   // Keep them across memory cleanup so automatic preload never loops.
   const preloadedOriginalWorkIds = new Set();
   const failedOriginalWorkIds = new Set();
+  const originalStates = new Map(); // artwork id -> first-page URL, state and byte progress
+  let previewObjectUrl = null;
+  let previewController = null;
   const seenWorkIds = new Set();
+  const pendingSeenIds = new Set();
+  const bookmarkRequests = new Set();
   const batchSelection = new Set();
 
   let host = null;
@@ -44,6 +49,7 @@
   let currentInfo = null;
   let currentPage = 0;
   let requestVersion = 0;
+  let selectionController = null;
   let workspaceVisible = false;
   let focusMode = false;
   let batchMode = false;
@@ -77,6 +83,12 @@
   }
 
   function init() {
+    window.PixivPlusOriginalCache.subscribe((url, state) => {
+      for (const [id, value] of originalStates) {
+        if (value.url === url) setOriginalState(id, { state, progress: state === 'cached' ? 100 : 0 });
+      }
+      if (!preloadRun && originalStates.size) updatePreloadButton(0, 0, 'ready');
+    });
     chrome.runtime.onMessage.addListener((message, _sender, respond) => {
       if (message.type !== 'showWorkbench') return;
       showWorkbench();
@@ -134,6 +146,7 @@
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('pagehide', () => {
       pageSuspended = true;
+      previewController?.abort();
       clearTimeout(backgroundIdleTimer);
       stopBackgroundLoading();
     });
@@ -233,6 +246,17 @@
       .ppw-thumb.selected { border-color:var(--ppw-blue);box-shadow:0 0 0 2px var(--ppw-blue-soft); }
       .ppw-thumb.batch-selected { border-color:var(--ppw-success);box-shadow:0 0 0 2px var(--ppw-soft); }
       .ppw-thumb img { width:100%;height:auto;aspect-ratio:1/1;display:block;object-fit:cover;background:var(--ppw-soft); }
+      .ppw-cache-progress { position:absolute;inset:auto 0 0;height:3px;background:rgb(255 255 255/.3);pointer-events:none; }
+      .ppw-cache-progress i { display:block;height:100%;width:var(--progress,0%);background:var(--ppw-blue); }
+      .ppw-cache-progress[data-state="cached"] i { width:100%;background:var(--ppw-success); }
+      .ppw-cache-progress[data-state="failed"] i { width:100%;background:#efaa38; }
+      .ppw-cache-progress[data-state="released"] i,.ppw-cache-progress[data-state="paused"] i { width:100%;background:#9198a2; }
+      .ppw-cache-progress[data-state="loading"][data-indeterminate="true"] i { width:30%;animation:ppw-progress 1.2s ease-in-out infinite alternate; }
+      .ppw-cache-progress[data-state="cached"]::after,.ppw-cache-progress[data-state="failed"]::after { position:absolute;right:4px;bottom:5px;width:15px;height:15px;display:grid;place-items:center;border-radius:50%;background:#17232de0;color:white;font-size:11px;content:"✓"; }
+      .ppw-cache-progress[data-state="failed"]::after { content:"!";color:#efaa38; }
+      .ppw-thumb[data-original-state] .ppw-thumb-label { padding-right:23px; }
+      @keyframes ppw-progress { from { transform:translateX(0); } to { transform:translateX(230%); } }
+      @media (prefers-reduced-motion:reduce) { .ppw-cache-progress i { animation:none!important; } }
       .ppw-thumb-label { position:absolute;inset:auto 0 0;padding:20px 7px 6px;color:#fff;background:linear-gradient(transparent,rgb(0 0 0/.75));text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px; }
       .ppw-unread { position:absolute;top:7px;left:7px;width:8px;height:8px;border-radius:50%;background:var(--ppw-blue);box-shadow:0 0 0 2px #fff; }
       .ppw-badge { position:absolute;top:6px;right:6px;padding:2px 6px;border-radius:6px;background:rgb(0 0 0/.7);color:#fff;font-size:11px; }
@@ -278,7 +302,9 @@
       .ppw-tags { grid-column:1/-1;display:flex;justify-content:flex-start;gap:5px;flex-wrap:wrap;max-width:none;padding-top:2px; }
       .ppw-details[data-placement="bottom"] .ppw-tags { grid-column:auto;justify-content:flex-end;flex-wrap:nowrap;overflow:hidden;padding-top:0; }
       .ppw-tag { padding:3px 7px;border-radius:999px;background:var(--ppw-soft);color:var(--ppw-muted);font-size:11px;white-space:nowrap; }
-      .ppw-tag.extra { display:none; }.ppw-details:hover .ppw-tag.extra { display:inline-flex; }.ppw-details:hover .ppw-tag.more { display:none; }
+      .ppw-tag.extra { display:none; }.ppw-tags.expanded .ppw-tag.extra { display:inline-flex; }
+      .ppw-details .ppw-tags.expanded { flex-wrap:wrap;max-height:180px;overflow:auto; }
+      button.ppw-tag { cursor:pointer;border:1px solid var(--ppw-line);font:inherit; }
       .ppw-shortcuts { flex:0 0 31px;display:flex;align-items:center;gap:13px;padding:0 420px 0 15px;background:var(--ppw-surface);border-top:1px solid var(--ppw-line);color:var(--ppw-muted);font-size:12px;white-space:nowrap;overflow:hidden; }
       kbd { min-width:20px;padding:1px 4px;border:1px solid var(--ppw-line);border-radius:5px;background:var(--ppw-soft);color:var(--ppw-text);text-align:center;box-shadow:0 1px 0 var(--ppw-line); }
       .ppw-toast { position:absolute;left:50%;bottom:112px;translate:-50% 0;padding:9px 13px;border-radius:9px;background:var(--ppw-surface);box-shadow:0 8px 28px rgb(0 0 0/.24);color:var(--ppw-text);z-index:5; }
@@ -323,6 +349,7 @@
         </select>
         <button class="ppw-icon-button" id="ppw-folder" type="button"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V5h6l2 2h10v13H3Z"/><path d="M3 10h18"/></svg></button>
         <button class="ppw-icon-button" id="ppw-settings" type="button">⚙</button>
+        <button class="ppw-icon-button" id="ppw-downloads" type="button" aria-label="Downloads" title="Downloads">⇩</button>
       </header>
       <div class="ppw-body">
         <aside class="ppw-browser" aria-label="Artwork thumbnails">
@@ -421,7 +448,7 @@
     shadow.getElementById('ppw-filter').options[1].textContent = t('workbenchFilterUnread', 'Unread');
     bookmarkButton.querySelector('.label').textContent = t('workbenchBookmark', 'Bookmark');
     shadow.getElementById('ppw-open').querySelector('.label').textContent = t('workbenchOpen', 'Artwork page');
-    downloadAllButton.querySelector('.label').textContent = t('workbenchDownloadAll', 'Download all');
+    downloadAllButton.querySelector('.label').textContent = t('workbenchDownloadWork', 'Download artwork…');
     downloadCurrentButton.querySelector('.label').textContent = t('workbenchDownloadCurrent', 'Download original');
     shadow.getElementById('ppw-batch-download').textContent = t('workbenchDownloadSelected', 'Download selected');
     shadow.getElementById('ppw-batch-cancel').textContent = t('workbenchCancelSelection', 'Cancel');
@@ -438,6 +465,8 @@
   }
 
   function bindEvents() {
+    window.PixivPlusUI?.localize(shadow);
+    shadow.getElementById('ppw-downloads').addEventListener('click', () => window.PixivPlusDownloadPanel.openQueue());
     loadOriginalsButton.addEventListener('click', () => preloadCurrentPageOriginals(true));
     shadow.getElementById('ppw-work-prev').addEventListener('click', () => moveWork(-1));
     shadow.getElementById('ppw-work-next').addEventListener('click', () => moveWork(1));
@@ -455,7 +484,7 @@
     shadow.getElementById('ppw-open').addEventListener('click', openCurrentWork);
     bookmarkButton.addEventListener('click', bookmarkCurrentWork);
     downloadCurrentButton.addEventListener('click', downloadCurrentPage);
-    downloadAllButton.addEventListener('click', () => currentInfo && window.PixivPlusDownload.downloadAllWork(currentInfo));
+    downloadAllButton.addEventListener('click', () => currentInfo && window.PixivPlusDownload.downloadWork(currentInfo.id));
     shadow.getElementById('ppw-density').addEventListener('click', cycleDensity);
     shadow.getElementById('ppw-batch-toggle').addEventListener('click', toggleBatchMode);
     shadow.getElementById('ppw-batch-cancel').addEventListener('click', () => setBatchMode(false));
@@ -486,8 +515,10 @@
     if (!isWorkbenchRoute() || pageSuspended) return;
     ensureUI();
     workspaceVisible = true;
+    window.PixivPlusUI?.setWorkbenchActive(true);
     shell.hidden = false;
     window.PixivPlusDownloadPanel?.setWorkbenchActive(true);
+    if (currentWorkId && !currentInfo && selectionController?.signal.aborted) selectWork(currentWorkId, false);
     scheduleInfoIslandPosition();
     syncFeedPagination();
     scheduleScan();
@@ -501,7 +532,7 @@
   function syncFeedPagination() {
     if (!feedPageInput) return;
     const page = currentFeedPage();
-    feedPageInput.value = String(page);
+    if (shadow.activeElement !== feedPageInput) feedPageInput.value = String(page);
     feedPrevButton.disabled = page <= 1;
     feedNextButton.disabled = store.size === 0;
   }
@@ -526,6 +557,10 @@
   function deactivate() {
     if (!workspaceVisible) return;
     workspaceVisible = false;
+    window.PixivPlusUI?.setWorkbenchActive(false);
+    selectionController?.abort();
+    previewController?.abort();
+    if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = null; }
     stopBackgroundLoading();
     window.PixivPlusAPI.pruneCaches();
     if (shell) shell.hidden = true;
@@ -593,6 +628,7 @@
     button.addEventListener('click', event => onThumbnailClick(event, record.id));
     feed.appendChild(button);
     thumbElements.set(record.id, button);
+    renderOriginalState(record.id);
   }
 
   function updateThumbnail(record) {
@@ -613,6 +649,35 @@
       badge.textContent = badgeText;
       badge.hidden = !badgeText;
     }
+    renderOriginalState(record.id);
+  }
+
+  function setOriginalState(id, patch) {
+    originalStates.set(id, { ...originalStates.get(id), ...patch });
+    renderOriginalState(id);
+  }
+
+  function renderOriginalState(id) {
+    const button = thumbElements.get(id), value = originalStates.get(id);
+    if (!button || !value) return;
+    let bar = button.querySelector('.ppw-cache-progress');
+    if (!bar) {
+      bar = document.createElement('span'); bar.className = 'ppw-cache-progress';
+      bar.setAttribute('aria-hidden', 'true'); bar.appendChild(document.createElement('i')); button.appendChild(bar);
+    }
+    bar.dataset.state = value.state;
+    bar.dataset.indeterminate = String(value.state === 'loading' && value.progress == null);
+    bar.style.setProperty('--progress', `${value.progress || 0}%`);
+    button.dataset.originalState = value.state;
+    const labels = {
+      queued: t('originalQueued', 'First original queued'), loading: t('originalLoading', 'Loading first original'),
+      cached: t('originalCached', 'First original cached · ready to save'), failed: t('originalFailed', 'First original failed · retry with Load page originals'),
+      paused: t('originalPaused', 'First original paused'), released: t('originalReleased', 'First original cache released · load again when needed')
+    };
+    const status = (labels[value.state] || '') + (value.state === 'loading' && value.progress != null ? ` ${Math.floor(value.progress)}%` : '');
+    const name = store.get(id)?.title || id;
+    button.title = `${name} · ${status}`;
+    button.setAttribute('aria-label', button.title);
   }
 
   function onThumbnailClick(event, id) {
@@ -639,6 +704,11 @@
 
   async function selectWork(id, scrollIntoView = true) {
     if (!store.get(id)) return;
+    selectionController?.abort();
+    previewController?.abort();
+    nextPrefetchController?.abort();
+    selectionController = new AbortController();
+    const signal = selectionController.signal;
     currentWorkId = String(id);
     currentInfo = null;
     currentPage = 0;
@@ -657,8 +727,8 @@
     setViewerLoading(record);
     const version = ++requestVersion;
     try {
-      const info = await getWorkInfoCached(currentWorkId);
-      if (version !== requestVersion || currentWorkId !== String(id)) return;
+      const info = await window.PixivPlusAPI.getWorkInfo(currentWorkId, { signal, priority: 'foreground' });
+      if (signal.aborted || version !== requestVersion || currentWorkId !== String(id)) return;
       currentInfo = info;
       const updated = store.update(id, {
         title: info.title,
@@ -673,7 +743,7 @@
       showPage(0);
       prefetchNext();
     } catch (fetchError) {
-      if (version !== requestVersion) return;
+      if (version !== requestVersion || signal.aborted) return;
       loading.hidden = true;
       error.textContent = friendlyError(fetchError);
       error.hidden = false;
@@ -700,6 +770,7 @@
 
   function renderInfo() {
     if (!currentInfo) return;
+    bookmarkButton.disabled = bookmarkRequests.has(currentWorkId);
     shadow.getElementById('ppw-current-title').textContent = currentInfo.title;
     title.textContent = currentInfo.title;
     artist.textContent = (currentInfo.artist || 'P').slice(0, 1).toUpperCase();
@@ -710,32 +781,43 @@
       : t('workbenchBookmark', 'Bookmark');
     downloadAllButton.hidden = currentInfo.pageCount <= 1 && !currentInfo.isUgoira;
     tags.replaceChildren();
-    for (const [index, tag] of currentInfo.tags.slice(0, 5).entries()) {
+    tags.classList.remove('expanded');
+    for (const [index, tag] of currentInfo.tags.entries()) {
       const span = document.createElement('span');
       span.className = `ppw-tag${index >= 2 ? ' extra' : ''}`;
       span.textContent = `#${tag}`;
       tags.appendChild(span);
     }
     if (currentInfo.tags.length > 2) {
-      const more = document.createElement('span');
+      const more = document.createElement('button');
+      more.type = 'button';
       more.className = 'ppw-tag more';
       more.textContent = `+${currentInfo.tags.length - 2}`;
+      more.setAttribute('aria-expanded', 'false');
+      more.addEventListener('click', () => {
+        const expanded = tags.classList.toggle('expanded');
+        more.setAttribute('aria-expanded', String(expanded));
+        more.textContent = expanded ? t('workbenchCollapseTags', 'Less') : `+${currentInfo.tags.length - 2}`;
+        scheduleInfoIslandPosition();
+      });
       tags.appendChild(more);
     }
     scheduleInfoIslandPosition();
   }
 
-  function showPage(index) {
+  function showPage(index, loadedBlob = null) {
     if (!currentInfo) return;
+    previewController?.abort();
     const max = currentInfo.pageUrls.length - 1;
     currentPage = clamp(index, 0, max);
     resetZoom();
     const page = currentInfo.pageUrls[currentPage];
     const originalUrl = page?.original || currentInfo.urls.original || '';
     const regularUrl = page?.regular || currentInfo.urls.regular || currentInfo.urls.small;
-    const url = originalUrl && originalMode
-      ? originalUrl
-      : (regularUrl || originalUrl);
+    const cached = loadedBlob || (originalMode && window.PixivPlusOriginalCache.peek(originalUrl));
+    if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
+    previewObjectUrl = cached ? URL.createObjectURL(cached) : null;
+    const url = previewObjectUrl || regularUrl || originalUrl;
     loading.hidden = false;
     error.hidden = true;
     previewImage.hidden = true;
@@ -749,6 +831,13 @@
       scheduleInfoIslandPosition();
     };
     previewImage.onerror = () => {
+      // Some host-page policies may disallow blob previews; file saving still
+      // uses the cached bytes even when display needs the original URL.
+      if (previewObjectUrl) {
+        URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = null;
+        previewImage.src = originalUrl;
+        return;
+      }
       loading.hidden = true;
       error.textContent = t('workbenchImageFailed', 'Could not load this preview');
       error.hidden = false;
@@ -759,6 +848,21 @@
     pageLabel.textContent = multi ? `${currentPage + 1} / ${currentInfo.pageUrls.length}` : '';
     shadow.getElementById('ppw-page-prev').disabled = currentPage === 0;
     shadow.getElementById('ppw-page-next').disabled = currentPage === max;
+    if (originalUrl && originalMode && !cached) {
+      const workId = currentWorkId, pageIndex = currentPage;
+      previewController = new AbortController();
+      const { signal } = previewController;
+      if (pageIndex === 0) setOriginalState(workId, { url: originalUrl, state: 'loading', progress: null });
+      window.PixivPlusOriginalCache.get(originalUrl, { signal, onProgress: value => {
+        if (pageIndex === 0) setOriginalState(workId, { state: 'loading', progress: value.total > 0 ? Math.min(99, value.received / value.total * 100) : null });
+      } }).then(blob => {
+        if (signal.aborted || currentWorkId !== workId || currentPage !== pageIndex) return;
+        if (pageIndex === 0) setOriginalState(workId, { state: window.PixivPlusOriginalCache.has(originalUrl) ? 'cached' : 'released', progress: 100 });
+        showPage(pageIndex, blob);
+      }).catch(failure => {
+        if (pageIndex === 0 && !signal.aborted) setOriginalState(workId, { state: 'failed', progress: 0 });
+      });
+    }
   }
 
   function moveWork(delta) {
@@ -804,29 +908,54 @@
 
   async function bookmarkCurrentWork() {
     if (!currentWorkId || !currentInfo || bookmarkButton.disabled) return;
+    const workId = currentWorkId;
+    const info = currentInfo;
+    if (bookmarkRequests.has(workId)) return;
+    bookmarkRequests.add(workId);
     bookmarkButton.disabled = true;
     try {
-      const nativeButton = nativeBookmarkButton(currentWorkId);
-      if (nativeButton) {
+      // Reconcile first: another tab or the native site may have changed it.
+      const fresh = await window.PixivPlusAPI.getWorkInfo(workId, { fresh: true, priority: 'foreground' });
+      try {
+        if (fresh.isBookmarked) {
+          await window.PixivPlusAPI.unbookmarkWork(workId, fresh.bookmarkId);
+          info.isBookmarked = false;
+          info.bookmarkId = '';
+        } else {
+          const result = await window.PixivPlusAPI.bookmarkWork(workId);
+          info.isBookmarked = true;
+          info.bookmarkId = result.bookmarkId || '';
+        }
+      } catch (mutationError) {
+        // Missing CSRF means no AJAX mutation was sent. Delegate only then,
+        // and verify the server result instead of treating click() as success.
+        const nativeButton = nativeBookmarkButton(workId);
+        if (mutationError.message !== 'CSRF_TOKEN_MISSING' || !nativeButton || nativeButton.disabled) throw mutationError;
         nativeButton.click();
-        currentInfo.isBookmarked = !currentInfo.isBookmarked;
-        if (!currentInfo.isBookmarked) currentInfo.bookmarkId = '';
-      } else if (currentInfo.isBookmarked) {
-        await window.PixivPlusAPI.unbookmarkWork(currentWorkId, currentInfo.bookmarkId);
-        currentInfo.isBookmarked = false;
-        currentInfo.bookmarkId = '';
-      } else {
-        const result = await window.PixivPlusAPI.bookmarkWork(currentWorkId);
-        currentInfo.isBookmarked = true;
-        currentInfo.bookmarkId = result.bookmarkId || currentInfo.bookmarkId || '';
+        let confirmed = false;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          await new Promise(resolve => setTimeout(resolve, 600));
+          const result = await window.PixivPlusAPI.getWorkInfo(workId, { fresh: true, priority: 'foreground' });
+          if (result.isBookmarked === !fresh.isBookmarked) {
+            info.isBookmarked = result.isBookmarked;
+            info.bookmarkId = result.bookmarkId;
+            confirmed = true; break;
+          }
+        }
+        if (!confirmed) throw new Error('BOOKMARK_NOT_CONFIRMED');
       }
-      renderInfo();
-      showToast(t('workbenchBookmarkUpdated', 'Bookmark updated'));
+      if (currentWorkId === workId && currentInfo) {
+        currentInfo.isBookmarked = info.isBookmarked;
+        currentInfo.bookmarkId = info.bookmarkId;
+        renderInfo();
+        showToast(t('workbenchBookmarkUpdated', 'Bookmark updated'));
+      }
     } catch (bookmarkError) {
       console.warn('[PixivPlus] Bookmark update failed', bookmarkError);
-      showToast(t('workbenchBookmarkFailed', 'Could not update bookmark'));
+      if (currentWorkId === workId) showToast(t('workbenchBookmarkFailed', 'Could not update bookmark'));
     } finally {
-      bookmarkButton.disabled = false;
+      bookmarkRequests.delete(workId);
+      bookmarkButton.disabled = bookmarkRequests.has(currentWorkId);
     }
   }
 
@@ -1031,9 +1160,13 @@
   }
 
   function onKeyDown(event) {
-    if (!workspaceVisible || !isWorkbenchRoute() || ['INPUT', 'TEXTAREA', 'SELECT'].includes(event.target?.tagName)) return;
+    const target = event.composedPath?.()[0] || event.target;
+    if (!workspaceVisible || !isWorkbenchRoute() || event.defaultPrevented
+      || event.isComposing || event.metaKey || event.ctrlKey || event.altKey
+      || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName) || target?.isContentEditable
+      || window.PixivPlusDownload?.isDialogOpen?.() || window.PixivPlusDownloadPanel?.isDialogOpen?.()) return;
     const key = event.key.toLowerCase();
-    if (['BUTTON', 'A'].includes(event.target?.tagName) && (event.code === 'Space' || event.key === 'Enter')) return;
+    if (['BUTTON', 'A', 'SUMMARY'].includes(target?.tagName) && (event.code === 'Space' || event.key === 'Enter')) return;
     if (key === 'j') { event.preventDefault(); moveWork(1); }
     else if (key === 'k') { event.preventDefault(); moveWork(-1); }
     else if (event.key === 'ArrowLeft') { event.preventDefault(); showPage(currentPage - 1); }
@@ -1090,6 +1223,7 @@
     } else {
       hiddenSince = null;
       window.PixivPlusAPI.pruneCaches();
+      window.PixivPlusOriginalCache.prune();
       scheduleAutoOriginalPreload();
       if (currentWorkId) prefetchNext();
     }
@@ -1101,33 +1235,10 @@
     autoPreloadTimer = setTimeout(() => preloadCurrentPageOriginals(false), 500);
   }
 
-  function preloadOriginalImage(url, signal) {
+  function preloadOriginalImage(url, signal, onProgress) {
     if (signal.aborted) return Promise.reject(new DOMException('Cancelled', 'AbortError'));
     if (!url) return Promise.reject(new Error('ORIGINAL_URL_MISSING'));
-    return new Promise((resolve, reject) => {
-      const image = new Image();
-      let settled = false;
-      const finish = (failure) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        signal.removeEventListener('abort', abort);
-        image.onload = null;
-        image.onerror = null;
-        // Stop pending image work and release the offscreen image reference.
-        // This does not clear the browser HTTP cache or the displayed image.
-        image.removeAttribute('src');
-        if (failure) reject(failure);
-        else resolve();
-      };
-      const abort = () => finish(new DOMException('Cancelled', 'AbortError'));
-      const timer = setTimeout(() => finish(new Error('ORIGINAL_PRELOAD_TIMEOUT')), 45000);
-      image.decoding = 'async';
-      image.onload = () => finish();
-      image.onerror = () => finish(new Error('ORIGINAL_PRELOAD_FAILED'));
-      signal.addEventListener('abort', abort, { once: true });
-      image.src = url;
-    });
+    return window.PixivPlusOriginalCache.get(url, { signal, onProgress });
   }
 
   function updatePreloadButton(done, total, state = 'loading') {
@@ -1141,7 +1252,11 @@
       label.textContent = t('workbenchOriginalsProgress', 'Originals {done}/{total}')
         .replace('{done}', String(done)).replace('{total}', String(total));
     } else if (state === 'ready') {
-      label.textContent = t('workbenchOriginalsReady', 'Originals ready');
+      const count = store.all().filter(record => originalStates.get(record.id)?.state === 'cached').length;
+      loadOriginalsButton.classList.toggle('active', count > 0);
+      loadOriginalsButton.querySelector('span').textContent = count > 0 ? '✓' : '◉';
+      label.textContent = t('workbenchOriginalsCached', 'Cached {done}/{total}')
+        .replace('{done}', String(count)).replace('{total}', String(store.size));
     } else if (state === 'paused') {
       label.textContent = t('workbenchOriginalsPaused', 'Original preload paused');
     } else {
@@ -1155,6 +1270,9 @@
       originalMode = true;
       manualPreloadRequested = true;
       failedOriginalWorkIds.clear();
+      for (const id of preloadedOriginalWorkIds) {
+        if (!window.PixivPlusOriginalCache.has(originalStates.get(id)?.url)) preloadedOriginalWorkIds.delete(id);
+      }
     }
     if (!canLoadInBackground() || (!preloadOriginalsByDefault && !manualPreloadRequested)) return Promise.resolve();
     const records = store.all().filter(record => (
@@ -1166,6 +1284,9 @@
     }
 
     const total = records.length;
+    for (const record of records) {
+      if (originalStates.get(record.id)?.state !== 'cached') setOriginalState(record.id, { state: 'queued', progress: 0 });
+    }
     let cursor = 0;
     let finished = 0;
     let failed = 0;
@@ -1179,13 +1300,18 @@
         while (cursor < records.length && !signal.aborted && canLoadInBackground()) {
           const record = records[cursor++];
           try {
+            setOriginalState(record.id, { state: 'loading', progress: null });
             const info = await getWorkInfoCached(record.id, signal);
             if (signal.aborted || !canLoadInBackground()) return;
             const originalUrl = info.pageUrls?.[0]?.original || info.urls?.original || '';
             if (!originalUrl) throw new Error('ORIGINAL_URL_MISSING');
-            await preloadOriginalImage(originalUrl, signal);
+            setOriginalState(record.id, { url: originalUrl });
+            await preloadOriginalImage(originalUrl, signal, value => setOriginalState(record.id, {
+              state: 'loading', progress: value.total > 0 ? Math.min(99, value.received / value.total * 100) : null
+            }));
             if (signal.aborted || !canLoadInBackground()) return;
             preloadedOriginalWorkIds.add(record.id);
+            setOriginalState(record.id, { state: window.PixivPlusOriginalCache.has(originalUrl) ? 'cached' : 'released', progress: 100 });
             const updated = store.update(record.id, {
               title: info.title,
               artist: info.artist,
@@ -1199,6 +1325,7 @@
             if (signal.aborted || preloadError.name === 'AbortError') return;
             failed++;
             failedOriginalWorkIds.add(record.id);
+            setOriginalState(record.id, { state: 'failed', progress: 0 });
             console.warn('[PixivPlus] Original preload failed', record.id, preloadError);
           } finally {
             if (!signal.aborted && canLoadInBackground()) {
@@ -1213,6 +1340,9 @@
       preloadRun = null;
       preloadController = null;
       if (signal.aborted || !canLoadInBackground()) {
+        for (const record of records) {
+          if (['queued', 'loading'].includes(originalStates.get(record.id)?.state)) setOriginalState(record.id, { state: 'paused', progress: 0 });
+        }
         updatePreloadButton(finished, total, 'paused');
         // A quick hide/show or route return may happen before abort settles.
         // Resume only if still requested; completed IDs remain untouched.
@@ -1226,7 +1356,7 @@
       }
       const message = failed
         ? t('workbenchOriginalsPartial', '{count} originals could not be loaded').replace('{count}', String(failed))
-        : t('workbenchOriginalsReady', 'Originals ready');
+        : t('workbenchPreloadComplete', 'Original preload finished');
       showToast(message);
       if (preloadOriginalsByDefault || manualPreloadRequested) scheduleAutoOriginalPreload();
     });
@@ -1290,13 +1420,22 @@
       const normalized = String(id || '');
       if (normalized) seenWorkIds.add(normalized);
     }
+    for (const id of pendingSeenIds) seenWorkIds.add(id);
   }
 
   function markWorkSeen(id) {
     const normalized = String(id || '');
     if (!normalized || seenWorkIds.has(normalized)) return;
     seenWorkIds.add(normalized);
-    chrome.storage.local.set({ [SEEN_WORKS_STORAGE_KEY]: [...seenWorkIds] });
+    pendingSeenIds.add(normalized);
+    chrome.runtime.sendMessage({ type: 'markWorkSeen', workId: normalized }, response => {
+      pendingSeenIds.delete(normalized);
+      if (chrome.runtime.lastError || !response?.ok) {
+        seenWorkIds.delete(normalized);
+        syncSeenState();
+        showToast(t('workbenchReadSaveFailed', 'Could not save read state; please retry'));
+      }
+    });
   }
 
   function syncSeenState() {

@@ -1,7 +1,19 @@
-# PixivPlus 2.1.0 Release Checklist
+# PixivPlus Release Checklist
 
-## Next release: workbench-only settings
+## 2.2.0: workbench settings and shared original cache
 
+- [x] `npm run release:check`: 66 tests and manifest/permissions/locales/CSP validation passed.
+- [x] Built `dist/pixiv-plus-2.2.0.zip`, verified ZIP integrity and runtime-only entries; preserved the submitted 2.1.0 archive.
+- Package SHA-256: `a3aeec9b46b488d084210bdff6aefe9afceefd3c557165d18f92d1e7ef9fa3c7`.
+- Store submission status is tracked in Partner Center; building/uploading does not mean certification or publication is complete.
+- [x] Shared original-cache tests: cache-hit saving without another transfer, in-flight deduplication, independent consumer cancellation, expiry, capacity eviction and incomplete-transfer rejection.
+- [x] Edge isolated fixture: per-thumbnail byte progress and completed markers; saving a cached original left the original-transfer count unchanged at 12.
+- [ ] After extension reload, verify real Pixiv byte progress, blob preview/CSP fallback, cached original save and correct first-page-only status for multi-page works.
+- [x] Behavioral regressions cover bookmark switching/failure, concurrent read/history writes, cancellation, producer cancellation, same-name allocation, partial Ugoira retry, folder invalidation and ask/all settings.
+- [x] Verify focused pagination drafts and button keyboard activation in Edge using the local workbench fixture.
+- [x] Verify queue expansion, history focus trapping, Escape/focus restoration, tag expansion and multi-page selection in the local fixture (no live account or filesystem writes).
+- [ ] Reload the real extension and verify logged-in bookmark/unbookmark, cross-tab persistence, native folder authorization and actual JPEG/PNG/Ugoira saves. Local fixture coverage does not replace this check.
+- [ ] Verify simultaneous cross-tab downloads into the same directory under all three duplicate policies.
 - [ ] Verify the following feed opens in the workbench even with an old saved `workbenchEnabled: false` preference.
 - [ ] Verify no original-page toggle, hover-preview settings, or legacy thumbnail download buttons remain.
 - [ ] Verify density, width, preload, download and naming settings persist; check save-failure feedback.

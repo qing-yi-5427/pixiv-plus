@@ -56,16 +56,16 @@ test('workbench exposes centered feed pagination without a native-page toggle', 
 });
 
 test('workbench bookmarks through Pixiv AJAX helpers and never opens the legacy form', () => {
-  assert.match(source, /const nativeButton = nativeBookmarkButton\(currentWorkId\)/);
-  assert.match(source, /if \(nativeButton\) \{[\s\S]*?nativeButton\.click\(\)/);
-  assert.match(source, /PixivPlusAPI\.bookmarkWork\(currentWorkId\)/);
-  assert.match(source, /PixivPlusAPI\.unbookmarkWork\(currentWorkId, currentInfo\.bookmarkId\)/);
+  assert.match(source, /const nativeButton = nativeBookmarkButton\(workId\)/);
+  assert.match(source, /BOOKMARK_NOT_CONFIRMED/);
+  assert.match(source, /PixivPlusAPI\.bookmarkWork\(workId\)/);
+  assert.match(source, /PixivPlusAPI\.unbookmarkWork\(workId, fresh\.bookmarkId\)/);
   assert.doesNotMatch(source, /bookmark_add\.php/);
 });
 
 test('read state persists by artwork id and page counts only loaded unread works', () => {
   assert.match(source, /const SEEN_WORKS_STORAGE_KEY = 'workbenchSeenWorkIds'/);
-  assert.match(source, /chrome\.storage\.local\.set\(\{ \[SEEN_WORKS_STORAGE_KEY\]: \[\.\.\.seenWorkIds\] \}\)/);
+  assert.match(source, /chrome\.runtime\.sendMessage\(\{ type: 'markWorkSeen', workId: normalized \}/);
   assert.match(source, /replaceSeenWorkIds\(settings\[SEEN_WORKS_STORAGE_KEY\]\)/);
   assert.match(source, /if \(!seenWorkIds\.has\(record\.id\)\) button\.append\(createUnreadMarker\(\)\)/);
   assert.match(source, /store\.all\(\)\.filter\(record => !seenWorkIds\.has\(record\.id\)\)\.length/);

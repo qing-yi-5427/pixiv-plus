@@ -31,6 +31,9 @@
   "workbenchOriginalsProgress": { "message": "Originals {done}/{total}" },
   "workbenchOriginalsReady": { "message": "Originals ready" },
   "workbenchOriginalsPaused": { "message": "Original preload paused" },
+  "workbenchDownloadWork": { "message": "Download artwork…" },
+  "workbenchCollapseTags": { "message": "Less" },
+  "workbenchReadSaveFailed": { "message": "Could not save read state; please retry" },
   "workbenchOriginalsPartial": { "message": "{count} originals could not be loaded" },
   "workbenchFilterAll": { "message": "All artworks" },
   "workbenchFilterUnread": { "message": "Unread" },
@@ -65,5 +68,13 @@
   "workbenchNotFound": { "message": "This artwork is unavailable" },
   "workbenchLoginRequired": { "message": "Log in to Pixiv to view this artwork" },
   "workbenchLoadFailed": { "message": "Could not load this artwork" },
+  "originalQueued": { "message": "First original queued" },
+  "workbenchOriginalsCached": { "message": "Cached {done}/{total}" },
+  "workbenchPreloadComplete": { "message": "Original preload finished" },
+  "originalLoading": { "message": "Loading first original" },
+  "originalCached": { "message": "First original cached · ready to save" },
+  "originalFailed": { "message": "First original failed · retry with Load page originals" },
+  "originalPaused": { "message": "First original paused" },
+  "originalReleased": { "message": "First original cache released · load again when needed" },
   "workbenchSummary": { "message": "{count} artworks · {unread} unread" }
 }

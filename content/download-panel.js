@@ -1,12 +1,16 @@
 // PixivPlus - Download Panel
-// Floating panel showing active downloads only; history modal via Show More
+// Workbench-docked queue with expandable controls and download history.
 
 (() => {
   'use strict';
 
   let panelHost = null;
-  let downloads = new Map(); // filename -> element
-  let metaStore = new Map(); // filename -> { thumbUrl, title, artist }
+  let historyClose = null;
+  let currentFolderName = '';
+  const ui = () => window.PixivPlusUI;
+  const tr = text => ui()?.t(text) || text;
+  let downloads = new Map(); // job id -> element
+  let metaStore = new Map(); // job id -> { thumbUrl, title, artist }
   let panelVisible = false;
   let autoCloseTimer = null;
   let history = [];
@@ -14,7 +18,6 @@
   let sessionFinished = 0;
   const sessionFiles = new Set();
 
-  const MAX_HISTORY = 100;
   const STORAGE_KEY = 'pp_download_history';
 
   function init() {
@@ -449,6 +452,14 @@
       :host([data-workbench="true"]) #pp-panel-close,
       :host([data-workbench="true"]) .pp-panel-body,
       :host([data-workbench="true"]) .pp-panel-footer { display:none; }
+      #pp-queue-toggle { border:0;background:transparent;color:inherit;cursor:pointer;padding:0;font:inherit; }
+      :host([data-workbench="true"]) .pp-panel.expanded { height:auto;max-height:min(60vh,480px);border:1px solid var(--pp-line);border-radius:12px 12px 0 0;box-shadow:0 -8px 24px #0002; }
+      :host([data-workbench="true"]) .pp-panel.expanded .pp-panel-header { grid-template-columns:minmax(0,1fr) auto; }
+      :host([data-workbench="true"]) .pp-panel.expanded .pp-panel-title { width:auto;font-size:12px; }
+      :host([data-workbench="true"]) .pp-panel.expanded .pp-panel-title::before { margin-right:6px; }
+      :host([data-workbench="true"]) .pp-panel.expanded .pp-panel-inline { display:none; }
+      :host([data-workbench="true"]) .pp-panel.expanded .pp-panel-body { display:block;max-height:calc(60vh - 90px);overflow:auto; }
+      :host([data-workbench="true"]) .pp-panel.expanded .pp-panel-footer { display:flex; }
       :host([data-workbench="true"]) .pp-toast { right:12px;bottom:42px; }
       @media (prefers-color-scheme:dark) {
         :host { --pp-bg:#17191f;--pp-soft:#22252c;--pp-text:#eff1f4;--pp-muted:#9aa1ad;--pp-line:#2d3139;--pp-blue:#35a9ff;--pp-blue-soft:#12354d;--pp-success:#4bd79b;--pp-danger:#ff6682; }
@@ -467,7 +478,7 @@
     panel.id = 'pp-download-panel';
     panel.innerHTML = `
       <div class="pp-panel-header" id="pp-panel-header">
-        <span class="pp-panel-heading"><span class="pp-panel-title">Downloads</span><span class="pp-panel-count" id="pp-panel-count"></span><span class="pp-panel-summary" id="pp-panel-summary"></span></span>
+        <button type="button" class="pp-panel-heading" id="pp-queue-toggle" title="Expand download queue" aria-expanded="false" aria-controls="pp-panel-body"><span class="pp-panel-title">Downloads</span><span class="pp-panel-count" id="pp-panel-count"></span><span class="pp-panel-summary" id="pp-panel-summary"></span></button>
         <div class="pp-panel-inline" aria-live="polite">
           <span class="pp-inline-current" id="pp-inline-current"></span>
           <span class="pp-inline-track"><i class="pp-inline-fill" id="pp-inline-fill"></i></span>
@@ -491,8 +502,12 @@
 
     // Events
     shadow.getElementById('pp-panel-header').addEventListener('click', () => {
-      if (panelHost.dataset.workbench === 'true') return;
-      panel.classList.toggle('minimized');
+      if (panelHost.dataset.workbench === 'true') {
+        const expanded = panel.classList.toggle('expanded');
+        const toggle = shadow.getElementById('pp-queue-toggle');
+        toggle.setAttribute('aria-expanded', String(expanded));
+        toggle.title = tr(expanded ? 'Collapse download queue' : 'Expand download queue');
+      } else panel.classList.toggle('minimized');
     });
     shadow.getElementById('pp-panel-close').addEventListener('click', e => {
       e.stopPropagation();
@@ -507,7 +522,7 @@
       e.stopPropagation();
       const paused = window.PixivPlusDownload?.toggleQueuePaused();
       e.currentTarget.textContent = paused ? '▶' : 'Ⅱ';
-      e.currentTarget.title = paused ? 'Resume queued downloads' : 'Pause queued downloads';
+      e.currentTarget.title = tr(paused ? 'Resume queued downloads' : 'Pause queued downloads');
     });
     shadow.getElementById('pp-panel-cancel-all').addEventListener('click', e => {
       e.stopPropagation();
@@ -521,27 +536,33 @@
     });
     shadow.getElementById('pp-panel-clear').addEventListener('click', () => {
       const body = shadow.getElementById('pp-panel-body');
-      const activeItems = body.querySelectorAll('.pp-download-item[data-state="in_progress"], .pp-download-item[data-state="queued"]');
-      activeItems.forEach(el => {
-        const url = el.dataset.url;
-        if (url) window.PixivPlusDownload?.cancelDownload(url);
-      });
-      if (activeItems.length === 0) {
-        body.innerHTML = '';
-        downloads.clear();
-        metaStore.clear();
-        updateCount(shadow);
+      for (const item of body.querySelectorAll('.pp-download-item')) {
+        if (['queued', 'in_progress'].includes(item.dataset.state)) continue;
+        downloads.delete(item.dataset.jobId);
+        metaStore.delete(item.dataset.jobId);
+        item.remove();
       }
+      updateCount(shadow);
     });
 
     document.body.appendChild(panelHost);
     loadHistory();
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes[STORAGE_KEY]) {
+        history = Array.isArray(changes[STORAGE_KEY].newValue) ? changes[STORAGE_KEY].newValue : [];
+        updateShowMoreButton(shadow);
+        if (historyClose) showHistoryModal(shadow, true);
+      }
+    });
+    setFolderName(currentFolderName);
+    ui()?.localize(shadow);
   }
 
   function updateDownload(data, shadow) {
     if (!shadow) shadow = panelHost?.shadowRoot;
     if (!shadow) return;
 
+    const key = data.id || data.filename;
     const panel = shadow.getElementById('pp-download-panel');
     const body = shadow.getElementById('pp-panel-body');
 
@@ -557,8 +578,8 @@
 
     // Store metadata when first seen (in_progress with thumbUrl/title/artist)
     if (data.thumbUrl || data.title || data.artist) {
-      const existing = metaStore.get(data.filename);
-      metaStore.set(data.filename, {
+      const existing = metaStore.get(key);
+      metaStore.set(key, {
         thumbUrl: data.thumbUrl || existing?.thumbUrl || '',
         title: data.title || existing?.title || '',
         artist: data.artist || existing?.artist || '',
@@ -567,11 +588,12 @@
       });
     }
 
-    let item = downloads.get(data.filename);
+    let item = downloads.get(key);
     if (!item) {
       item = document.createElement('div');
       item.className = 'pp-download-item';
       item.dataset.url = data.url || '';
+      item.dataset.jobId = key;
       item.innerHTML = `
         <div class="pp-download-thumb" hidden><img alt=""></div>
         <div class="pp-download-main">
@@ -591,10 +613,10 @@
       name.textContent = data.filename;
       name.title = data.filename;
       body.appendChild(item);
-      downloads.set(data.filename, item);
+      downloads.set(key, item);
 
-      if (!sessionFiles.has(data.filename)) {
-        sessionFiles.add(data.filename);
+      if (!sessionFiles.has(key)) {
+        sessionFiles.add(key);
         sessionTotal++;
       }
 
@@ -603,12 +625,12 @@
         e.stopPropagation();
         const url = item.dataset.url;
         if (url && ['queued', 'in_progress'].includes(item.dataset.state)) {
-          window.PixivPlusDownload?.cancelDownload(url);
+          window.PixivPlusDownload?.cancelDownload(key);
           return;
         }
         item.remove();
-        downloads.delete(data.filename);
-        metaStore.delete(data.filename);
+        downloads.delete(key);
+        metaStore.delete(key);
         updateCount(shadow);
       });
 
@@ -617,21 +639,23 @@
         e.stopPropagation();
         const url = item.dataset.url;
         if (url && ['queued', 'in_progress'].includes(item.dataset.state)) {
-          window.PixivPlusDownload?.cancelDownload(url);
+          window.PixivPlusDownload?.cancelDownload(key);
           return;
         }
         item.remove();
-        downloads.delete(data.filename);
-        metaStore.delete(data.filename);
+        downloads.delete(key);
+        metaStore.delete(key);
         updateCount(shadow);
       });
 
       item.querySelector('.pp-dl-retry').addEventListener('click', e => {
         e.stopPropagation();
-        window.PixivPlusDownload?.retryDownload(data.filename);
+        window.PixivPlusDownload?.retryDownload(key);
       });
     }
 
+    item.querySelector('.pp-download-name').textContent = data.filename;
+    item.querySelector('.pp-download-name').title = data.filename;
     syncItemThumbnail(item, data);
 
     const fill = item.querySelector('.pp-download-bar-fill');
@@ -702,14 +726,14 @@
         sessionFinished++;
         item.dataset.sessionFinished = 'true';
       }
-      const meta = metaStore.get(data.filename) || {};
+      const meta = metaStore.get(key) || {};
       addToHistory(data, meta);
-      metaStore.delete(data.filename);
+      metaStore.delete(key);
 
       if (data.state !== 'interrupted') {
         setTimeout(() => {
           item.remove();
-          downloads.delete(data.filename);
+          downloads.delete(key);
           updateCount(shadow);
           updateShowMoreButton(shadow);
         }, 800);
@@ -724,7 +748,7 @@
           const body = shadow.getElementById('pp-panel-body');
           const active = body?.querySelectorAll('.pp-download-item[data-state="queued"], .pp-download-item[data-state="in_progress"]').length || 0;
           const failures = body?.querySelectorAll('.pp-download-item[data-state="interrupted"]').length || 0;
-          if (active === 0 && failures === 0) {
+          if (active === 0 && failures === 0 && panelHost.dataset.workbench !== 'true') {
             panel.classList.remove('visible');
             panelVisible = false;
           }
@@ -732,11 +756,20 @@
       }
     }
 
+    if (data.committing) {
+      item.querySelector('.pp-dl-cancel').disabled = true;
+      item.querySelector('.pp-dl-remove').disabled = true;
+    } else if (data.state === 'queued') {
+      item.querySelector('.pp-dl-cancel').disabled = false;
+      item.querySelector('.pp-dl-remove').disabled = false;
+    }
+    ui()?.localize(item);
     updateCount(shadow);
   }
 
   function addToHistory(data, meta) {
-    history.unshift({
+    const entry = {
+      id: data.id || crypto.randomUUID(),
       filename: data.filename,
       thumbUrl: meta.thumbUrl || '',
       title: meta.title || '',
@@ -746,9 +779,10 @@
       state: data.state,
       error: data.error || '',
       timestamp: Date.now()
+    };
+    chrome.runtime.sendMessage({ type: 'addDownloadHistory', item: entry }, response => {
+      if (chrome.runtime.lastError || !response?.ok) showToast(tr('Could not save download history'), 'error');
     });
-    if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
-    saveHistory();
   }
 
   function loadHistory() {
@@ -758,10 +792,6 @@
         updateShowMoreButton(panelHost?.shadowRoot);
       }
     });
-  }
-
-  function saveHistory() {
-    chrome.storage.local.set({ [STORAGE_KEY]: history });
   }
 
   function isDuplicate(filename) {
@@ -774,7 +804,7 @@
     if (!btn) return;
     if (history.length > 0) {
       btn.style.display = '';
-      btn.textContent = `History (${history.length})`;
+      btn.textContent = tr('History') + ` (${history.length})`;
     } else {
       btn.style.display = 'none';
     }
@@ -790,6 +820,7 @@
     const summary = shadow?.getElementById('pp-panel-summary');
     if (summary) summary.textContent = sessionTotal > 0 ? `${sessionFinished}/${sessionTotal}` : '';
     updateInlineProgress(shadow, body);
+    ui()?.localize(shadow.getElementById('pp-panel-header'));
   }
 
   function updateInlineProgress(shadow, body) {
@@ -827,18 +858,19 @@
   }
 
   function setFolderName(name) {
+    currentFolderName = name || '';
     const button = panelHost?.shadowRoot?.getElementById('pp-choose-folder');
-    if (button) button.textContent = `Folder: ${name || 'not selected'}`;
+    if (button) button.textContent = tr(`Folder: ${currentFolderName || 'not selected'}`);
   }
 
   function setWorkbenchActive(active) {
     if (!panelHost) return;
     panelHost.dataset.workbench = active ? 'true' : 'false';
-    if (active) panelHost.shadowRoot?.getElementById('pp-download-panel')?.classList.remove('minimized');
+    if (active) openQueue(false);
   }
 
   function syncItemThumbnail(item, data) {
-    const meta = metaStore.get(data.filename) || {};
+    const meta = metaStore.get(data.id || data.filename) || {};
     const url = data.thumbUrl || meta.thumbUrl || '';
     if (!url) return;
     const wrapper = item.querySelector('.pp-download-thumb');
@@ -855,7 +887,18 @@
     image.src = url;
   }
 
-  function showHistoryModal(shadow) {
+  function openQueue(expanded = true) {
+    if (!panelHost) init();
+    const root = panelHost.shadowRoot;
+    const panel = root.getElementById('pp-download-panel');
+    panel.classList.add('visible'); panel.classList.remove('minimized');
+    panel.classList.toggle('expanded', expanded); panelVisible = true;
+    const toggle = root.getElementById('pp-queue-toggle');
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.title = tr(expanded ? 'Collapse download queue' : 'Expand download queue');
+  }
+
+  function showHistoryModal(shadow, refresh = false) {
     if (!shadow) shadow = panelHost?.shadowRoot;
     if (!shadow) return;
 
@@ -866,10 +909,10 @@
       overlay.className = 'pp-history-overlay';
       overlay.id = 'pp-history-overlay';
       overlay.innerHTML = `
-        <div class="pp-history-panel">
+        <div class="pp-history-panel" role="document">
           <div class="pp-history-header">
             <span><span class="pp-history-title">Download History</span><span class="pp-history-count" id="pp-history-count"></span></span>
-            <button class="pp-history-close" id="pp-history-close">&times;</button>
+            <button class="pp-history-close" id="pp-history-close" aria-label="Close">&times;</button>
           </div>
           <div class="pp-history-grid" id="pp-history-grid"></div>
         </div>
@@ -877,10 +920,10 @@
       shadow.appendChild(overlay);
 
       shadow.getElementById('pp-history-close').addEventListener('click', () => {
-        overlay.classList.remove('visible');
+        historyClose?.();
       });
       overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) overlay.classList.remove('visible');
+        if (e.target === overlay) historyClose?.();
       });
     }
 
@@ -939,6 +982,9 @@
 
     if (countEl) countEl.textContent = `(${history.length})`;
     overlay.classList.add('visible');
+    overlay.setAttribute('aria-label', tr('Download History'));
+    ui()?.localize(overlay);
+    if (!refresh) historyClose = ui()?.openDialog(overlay, () => { overlay.classList.remove('visible'); historyClose = null; });
   }
 
   function showToast(message, type) {
@@ -946,7 +992,7 @@
     const shadow = panelHost.shadowRoot;
     const toast = document.createElement('div');
     toast.className = `pp-toast ${type || 'info'}`;
-    toast.textContent = message;
+    toast.textContent = tr(message);
     shadow.appendChild(toast);
 
     const existingToasts = shadow.querySelectorAll('.pp-toast.visible');
@@ -967,6 +1013,8 @@
 
   window.PixivPlusDownloadPanel = {
     init,
+    openQueue,
+    isDialogOpen: () => Boolean(historyClose),
     showToast,
     updateDownload,
     isDuplicate,

@@ -9,7 +9,7 @@ const read = () => JSON.parse(localStorage.getItem('settings-preview') || '{}');
 window.chrome = {
   i18n: {getUILanguage: () => new URLSearchParams(location.search).get('lang') || 'zh-CN'},
   runtime: {
-    getManifest: () => ({version:'2.1.0 · Preview'}),
+    getManifest: () => ({version:'2.2.0 · Preview'}),
     openOptionsPage: () => window.open('/popup/popup.html?view=page'),
     sendMessage: (msg, cb) => {
       if (msg.type === 'getSettings') return cb(PixivPlusSettings.normalize(read()));

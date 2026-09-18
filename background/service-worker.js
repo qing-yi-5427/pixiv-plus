@@ -5,8 +5,43 @@
 const activeTransfers = new Map();
 importScripts('../lib/settings.js');
 let settingsWrites = Promise.resolve();
+let stateWrites = Promise.resolve();
+
+function updateLocalState(key, update) {
+  const result = stateWrites.then(() => new Promise((resolve, reject) => {
+    chrome.storage.local.get({ [key]: [] }, saved => {
+      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
+      const value = update(Array.isArray(saved[key]) ? saved[key] : []);
+      chrome.storage.local.set({ [key]: value }, () => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(value);
+      });
+    });
+  }));
+  stateWrites = result.catch(() => {});
+  return result;
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'markWorkSeen') {
+    if (!/^\d+$/.test(String(msg.workId))) { sendResponse({ error: 'Invalid artwork ID' }); return; }
+    updateLocalState('workbenchSeenWorkIds', ids => [...new Set([...ids.map(String), String(msg.workId)])])
+      .then(() => sendResponse({ ok: true }), error => sendResponse({ error: error.message }));
+    return true;
+  }
+  if (msg.type === 'addDownloadHistory') {
+    const item = msg.item;
+    if (!item || typeof item.id !== 'string' || typeof item.filename !== 'string'
+      || !['complete', 'interrupted', 'cancelled'].includes(item.state)) {
+      sendResponse({ error: 'Invalid history entry' }); return;
+    }
+    const entry = { id: item.id, filename: item.filename, state: item.state, timestamp: Date.now() };
+    for (const key of ['thumbUrl', 'title', 'artist', 'workId', 'error']) entry[key] = String(item[key] || '').slice(0, 2048);
+    entry.pageIndex = Number.isInteger(item.pageIndex) ? item.pageIndex : 0;
+    updateLocalState('pp_download_history', items => [entry, ...items.filter(old => old.id !== entry.id)].slice(0, 100))
+      .then(() => sendResponse({ ok: true }), error => sendResponse({ error: error.message }));
+    return true;
+  }
   if (msg.type === 'getSettings') {
     chrome.storage.local.get(PixivPlusSettings.defaults, (settings) => {
       const error = chrome.runtime.lastError;

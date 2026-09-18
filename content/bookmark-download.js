@@ -7,9 +7,12 @@
   let dirHandle = null;
   let dirHandleLoad = null;
   const pendingDownloads = [];
-  const activeDownloads = new Map(); // url -> job
-  const reservedFilenames = new Set();
-  const failedDownloads = new Map(); // filename -> job
+  const activeDownloads = new Map(); // job id -> job
+  const reservations = new Map(); // job id -> directory and reserved names
+  let allocationQueue = Promise.resolve();
+  let downloadEpoch = 0;
+  const producers = new Set();
+  const failedDownloads = new Map(); // job id -> job
   let maxConcurrentDownloads = 3;
   let duplicatePolicy = 'skip';
   let multiDownloadDefault = 'ask';
@@ -26,11 +29,11 @@
     multiDownloadDefault = settings.multiDownloadDefault || 'ask';
   });
   chrome.storage.onChanged.addListener(changes => {
-    if (changes.downloadDirectoryResetAt) {
-      dirHandleLoad = Promise.resolve(dirHandleLoad).then(() => {
-        dirHandle = null;
-        window.PixivPlusDownloadPanel?.setFolderName('not selected');
-        return null;
+    if (changes.downloadDirectoryResetAt || changes.downloadDirectoryChangedAt) {
+      dirHandleLoad = Promise.resolve(dirHandleLoad).then(async () => {
+        dirHandle = await loadDirHandle();
+        window.PixivPlusDownloadPanel?.setFolderName(dirHandle?.name || 'not selected');
+        return dirHandle;
       });
     }
     if (changes.downloadConcurrency) {
@@ -61,8 +64,8 @@
     return new Promise((resolve, reject) => {
       const tx = db.transaction('handles', 'readwrite');
       tx.objectStore('handles').put(handle, 'downloadDir');
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
     });
   }
 
@@ -71,8 +74,8 @@
     return new Promise((resolve) => {
       const tx = db.transaction('handles', 'readonly');
       const req = tx.objectStore('handles').get('downloadDir');
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => resolve(null);
+      req.onsuccess = () => { db.close(); resolve(req.result || null); };
+      req.onerror = () => { db.close(); resolve(null); };
     });
   }
 
@@ -110,6 +113,9 @@
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
       dirHandle = handle;
       await saveDirHandle(handle);
+      await new Promise((resolve, reject) => chrome.storage.local.set({ downloadDirectoryChangedAt: crypto.randomUUID() }, () => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message)); else resolve();
+      }));
       window.PixivPlusDownloadPanel?.setFolderName(handle.name);
       return handle;
     } catch (e) {
@@ -126,6 +132,9 @@
       dirHandle = handle;
       dirHandleLoad = Promise.resolve(handle);
       await saveDirHandle(handle);
+      await new Promise((resolve, reject) => chrome.storage.local.set({ downloadDirectoryChangedAt: crypto.randomUUID() }, () => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message)); else resolve();
+      }));
       window.PixivPlusDownloadPanel?.setFolderName(handle.name);
       window.PixivPlusDownloadPanel?.showToast(`Download folder: ${handle.name}`, 'success');
       return handle;
@@ -271,61 +280,91 @@
 
   // --- Download logic ---
 
-  async function downloadFile(url, filename, tags, meta, options = {}) {
-    const panel = window.PixivPlusDownloadPanel;
-    const policy = options.duplicatePolicy || duplicatePolicy;
-    if (policy === 'skip' && panel?.isDuplicate(filename)) {
-      panel.showToast(`Already downloaded: ${meta?.title || filename}`, 'warning');
+  function checkCancelled(signal, epoch = downloadEpoch) {
+    if (signal?.aborted || epoch !== downloadEpoch) throw new DOMException('Cancelled', 'AbortError');
+  }
+
+  async function produce(task) {
+    const controller = new AbortController();
+    const epoch = downloadEpoch;
+    producers.add(controller);
+    try { return await task(controller.signal, epoch); }
+    catch (error) {
+      if (error.name !== 'AbortError') window.PixivPlusDownloadPanel?.showToast(error.message, 'error');
       return false;
+    } finally { producers.delete(controller); }
+  }
+
+  async function fileExists(handle, name) {
+    try { await handle.getFileHandle(name); return true; }
+    catch (error) { if (error.name === 'NotFoundError') return false; throw error; }
+  }
+
+  async function namesReserved(handle, names, owner) {
+    for (const [id, reservation] of reservations) {
+      if (id === owner || !names.some(name => reservation.names.includes(name))) continue;
+      if (reservation.handle === handle || await handle.isSameEntry(reservation.handle)) return true;
     }
+    return false;
+  }
 
-    const handle = Object.hasOwn(options, 'dirHandle')
-      ? options.dirHandle
-      : await getDirHandle(options.promptForDir !== false);
-
-    if (!handle) {
-      panel?.showToast('Choose a download folder before downloading', 'warning');
-      return false;
-    }
-
-    if (policy === 'rename') {
-      filename = await getAvailableFilename(handle, filename);
-    }
-    if (reservedFilenames.has(filename)) {
-      panel?.showToast(`Already queued: ${meta?.title || filename}`, 'warning');
-      return false;
-    }
-
-    const job = {
-      url,
-      filename,
-      tags,
-      meta: meta || {},
-      dirHandle: handle,
-      duplicatePolicy: policy,
-      companion: options.companion || null,
-      controller: new AbortController(),
-      cancelled: false
-    };
-    reservedFilenames.add(filename);
-    pendingDownloads.push(job);
-
-    panel.updateDownload({
-      filename,
-      state: 'queued',
-      bytesReceived: 0,
-      totalBytes: 0,
-      speed: 'Queued',
-      url,
-      thumbUrl: meta?.thumbUrl || '',
-      title: meta?.title || '',
-      artist: meta?.artist || '',
-      workId: meta?.workId || '',
-      pageIndex: meta?.pageIndex ?? 0
+  function reserveNames(handle, filename, companion, policy, id, signal, epoch, resume = false) {
+    const result = allocationQueue.catch(() => {}).then(async () => {
+      const dot = filename.lastIndexOf('.');
+      const base = dot > 0 ? filename.slice(0, dot) : filename;
+      const extension = dot > 0 ? filename.slice(dot) : '';
+      for (let number = 1; number <= 10000; number++) {
+        checkCancelled(signal, epoch);
+        const stem = number === 1 ? base : base + ' (' + number + ')';
+        const main = stem + extension;
+        const sidecar = companion ? { ...companion, filename: stem + '.frames.json' } : null;
+        const names = [main, ...(sidecar ? [sidecar.filename] : [])];
+        const busy = await namesReserved(handle, names, id);
+        const exists = (await Promise.all(names.map(name => fileExists(handle, name)))).some(Boolean);
+        checkCancelled(signal, epoch);
+        if (busy || (exists && policy !== 'overwrite' && !resume)) {
+          if (policy === 'rename' && !resume) continue;
+          return null;
+        }
+        reservations.set(id, { handle, names });
+        return { filename: main, companion: sidecar };
+      }
+      throw new Error('Could not allocate a unique filename');
     });
+    allocationQueue = result.catch(() => {});
+    return result;
+  }
 
-    pumpDownloadQueue();
-    return true;
+  async function downloadFile(url, filename, tags, meta, options = {}) {
+    const epoch = options.epoch ?? downloadEpoch;
+    const panel = window.PixivPlusDownloadPanel;
+    const id = options.id || crypto.randomUUID();
+    const controller = new AbortController();
+    const policy = options.duplicatePolicy || duplicatePolicy;
+    try {
+      checkCancelled(options.signal, epoch);
+      const handle = Object.hasOwn(options, 'dirHandle') ? options.dirHandle : await getDirHandle(options.promptForDir !== false);
+      checkCancelled(options.signal, epoch);
+      if (!handle) { panel?.showToast('Choose a download folder before downloading', 'warning'); return false; }
+      const allocated = await reserveNames(handle, filename, options.companion, policy, id, options.signal, epoch, Boolean(options.resumeFiles?.length));
+      if (!allocated) { panel?.showToast('File exists or is already queued: ' + filename, 'warning'); return false; }
+      const job = {
+        id, url, requestedFilename: filename, ...allocated, tags, meta: meta || {},
+        dirHandle: handle, duplicatePolicy: policy, controller, epoch,
+        completedFiles: options.resumeFiles || [], cancelled: false
+      };
+      pendingDownloads.push(job);
+      panel.updateDownload({
+        id, filename: job.filename, state: 'queued', bytesReceived: 0, totalBytes: 0,
+        speed: 'Queued', url, ...job.meta
+      });
+      pumpDownloadQueue();
+      return true;
+    } catch (error) {
+      reservations.delete(id);
+      if (error.name !== 'AbortError') panel?.showToast(error.message, 'error');
+      return false;
+    }
   }
 
   function pumpDownloadQueue() {
@@ -334,10 +373,10 @@
       const job = pendingDownloads.shift();
       if (job.cancelled) continue;
       runningDownloads++;
-      activeDownloads.set(job.url, job);
+      activeDownloads.set(job.id, job);
       runDownload(job).finally(() => {
-        activeDownloads.delete(job.url);
-        reservedFilenames.delete(job.filename);
+        activeDownloads.delete(job.id);
+        reservations.delete(job.id);
         runningDownloads--;
         pumpDownloadQueue();
       });
@@ -345,257 +384,176 @@
   }
 
   async function runDownload(job) {
-    const { url, filename, tags, meta, dirHandle: handle, controller } = job;
+    const { url, tags, meta, dirHandle: handle, controller } = job;
     const panel = window.PixivPlusDownloadPanel;
-
-    panel.updateDownload({
-      filename,
-      state: 'in_progress',
-      bytesReceived: 0,
-      totalBytes: 0,
-      speed: 'Connecting...',
-      url,
-      thumbUrl: meta.thumbUrl || '',
-      title: meta.title || '',
-      artist: meta.artist || '',
-      workId: meta.workId || '',
-      pageIndex: meta.pageIndex ?? 0
-    });
-
+    const update = fields => panel.updateDownload({ id: job.id, filename: job.filename, ...fields });
+    update({ state: 'in_progress', bytesReceived: 0, totalBytes: 0, speed: 'Connecting...', url, ...meta });
     try {
       const blob = await fetchImageStream(url, controller.signal, progress => {
-        panel.updateDownload({
-          filename,
-          state: 'in_progress',
-          bytesReceived: progress.received,
-          totalBytes: progress.total,
-          speed: progress.speed,
-          url
-        });
+        update({ state: 'in_progress', bytesReceived: progress.received, totalBytes: progress.total, speed: progress.speed, url });
       });
-
-      if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
-
-      // Inject tags into image metadata
-      const embedTags = await new Promise(r => chrome.storage.local.get({ embedTags: true }, s => r(s.embedTags)));
-      let outputBlob = blob;
-      if (embedTags && tags && tags.length > 0) {
-        outputBlob = await injectTags(blob, tags);
+      checkCancelled(controller.signal, job.epoch);
+      const embedTags = await new Promise((resolve, reject) => chrome.storage.local.get({ embedTags: true }, settings => {
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message)); else resolve(settings.embedTags);
+      }));
+      checkCancelled(controller.signal, job.epoch);
+      const output = embedTags && tags?.length ? await injectTags(blob, tags) : blob;
+      checkCancelled(controller.signal, job.epoch);
+      const commit = async () => {
+        const allocated = await reserveNames(handle, job.completedFiles.length ? job.filename : job.requestedFilename,
+          job.companion, job.duplicatePolicy, job.id, controller.signal, job.epoch, job.completedFiles.length > 0);
+        if (!allocated) throw new Error('File exists; nothing was overwritten');
+        Object.assign(job, allocated);
+        const files = [{ name: job.filename, blob: output }];
+        if (job.companion) files.push({ name: job.companion.filename, blob: new Blob([job.companion.text], { type: 'application/json' }) });
+        update({ state: 'in_progress', speed: 'Saving...' });
+        await writeFiles(handle, files, job);
+      };
+      if (typeof navigator !== 'undefined' && navigator.locks) {
+        await navigator.locks.request('pixivplus-file-commit', { signal: controller.signal }, commit);
+      } else await commit();
+      update({ state: 'complete' });
+      failedDownloads.delete(job.id);
+    } catch (error) {
+      // Once close() starts, commit is not cancellable. Partial failures retain
+      // fingerprints, allowing retry without overwriting changed files.
+      if (!job.committing && (controller.signal.aborted || error.name === 'AbortError')) {
+        update({ state: 'cancelled' });
+      } else {
+        failedDownloads.set(job.id, { ...job, controller: null, committing: false });
+        const partial = job.completedFiles.length ? 'Partial save: ' + job.completedFiles.map(file => file.name).join(', ') + ' — ' : '';
+        update({ state: 'interrupted', error: partial + error.message });
       }
-
-      await writeFile(handle, filename, outputBlob, job.duplicatePolicy);
-      if (job.companion) {
-        await writeFile(
-          handle,
-          job.companion.filename,
-          new Blob([job.companion.text], { type: job.companion.type || 'application/json' }),
-          job.duplicatePolicy
-        );
-      }
-      panel.updateDownload({ filename, state: 'complete' });
-      failedDownloads.delete(filename);
-
-    } catch (err) {
-      if (controller.signal.aborted || err.name === 'AbortError') {
-        panel.updateDownload({ filename, state: 'cancelled' });
-        return;
-      }
-      failedDownloads.set(filename, { ...job, controller: null });
-      panel.updateDownload({
-        filename,
-        state: 'interrupted',
-        error: err.message
-      });
     }
   }
 
   function fetchImageStream(url, signal, onProgress) {
-    return new Promise((resolve, reject) => {
-      const port = chrome.runtime.connect({ name: 'pixivplus-image-stream' });
-      const requestId = crypto.randomUUID();
-      const chunks = [];
-      let settled = false;
-      let contentType = 'application/octet-stream';
-
-      const finish = (fn, value) => {
-        if (settled) return;
-        settled = true;
-        signal.removeEventListener('abort', onAbort);
-        try { port.disconnect(); } catch {}
-        fn(value);
-      };
-
-      const onAbort = () => finish(reject, new DOMException('Cancelled', 'AbortError'));
-      signal.addEventListener('abort', onAbort, { once: true });
-
-      port.onMessage.addListener(msg => {
-        if (msg.requestId && msg.requestId !== requestId) return;
-        if (msg.type === 'chunk') {
-          chunks.push(base64ToBytes(msg.data));
-        } else if (msg.type === 'progress') {
-          onProgress(msg);
-        } else if (msg.type === 'done') {
-          contentType = msg.contentType || contentType;
-          finish(resolve, new Blob(chunks, { type: contentType }));
-        } else if (msg.type === 'error') {
-          finish(reject, new Error(msg.error || 'Download failed'));
-        }
-      });
-
-      port.onDisconnect.addListener(() => {
-        if (!settled) finish(reject, new Error('Download connection closed'));
-      });
-
-      port.postMessage({ type: 'start', requestId, url });
-    });
-  }
-
-  function base64ToBytes(base64) {
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes;
+    checkCancelled(signal);
+    return window.PixivPlusOriginalCache.get(url, { signal, onProgress });
   }
 
   async function downloadWork(workId) {
-    // Ask for the directory while this function is still handling the user's
-    // click; file pickers require transient user activation.
-    const handle = await getDirHandle(true);
-    if (!handle) return false;
-    try {
-      const info = await window.PixivPlusAPI.getWorkInfo(workId);
-      if (info.isUgoira) {
-        await downloadUgoiraWork(info, handle);
-        return;
+    return produce(async (signal, epoch) => {
+      const handle = await getDirHandle(true);
+      if (!handle) return false;
+      checkCancelled(signal, epoch);
+      const info = await window.PixivPlusAPI.getWorkInfo(workId, { signal, priority: 'foreground' });
+      checkCancelled(signal, epoch);
+      if (info.isUgoira) return downloadUgoiraWork(info, handle, signal, epoch);
+      if (info.pageCount > 1 && multiDownloadDefault === 'ask') {
+        showMultiImageSelector(info);
+        return true;
       }
-      if (info.pageCount === 1) {
-        const url = info.pageUrls[0]?.original;
-        if (!url) throw new Error('No URL');
-        const filename = window.PixivPlusAPI.generateFilename(info, 0);
-        downloadFile(url, filename, info.tags, {
-          thumbUrl: info.urls.small || info.urls.regular || '',
-          title: info.title,
-          artist: info.artist,
-          workId: info.id,
-          pageIndex: 0
-        }, { dirHandle: handle });
-      } else {
-        if (multiDownloadDefault === 'all') {
-          queuePages(info, info.pageUrls.map((_, index) => index), handle);
-        } else {
-          showMultiImageSelector(info, handle);
-        }
-      }
-    } catch (err) {
-      window.PixivPlusDownloadPanel.showToast(`Could not download work: ${err.message}`, 'error');
-    }
+      return queuePages(info, info.pageUrls.map((_, index) => index), handle, signal, epoch);
+    });
   }
 
-  function queuePages(info, indices, handle) {
-    for (const idx of indices) {
-      const url = info.pageUrls[idx]?.original;
+  async function queuePages(info, indices, handle, signal, epoch = downloadEpoch) {
+    for (const index of indices) {
+      checkCancelled(signal, epoch);
+      const url = info.pageUrls[index]?.original;
       if (!url) continue;
-      const filename = window.PixivPlusAPI.generateFilename(info, idx);
-      downloadFile(url, filename, info.tags, {
-        thumbUrl: info.pageUrls[idx]?.regular || info.urls.small || info.urls.regular || '',
-        title: info.title,
-        artist: info.artist,
-        workId: info.id,
-        pageIndex: idx
-      }, { dirHandle: handle });
+      await downloadFile(url, window.PixivPlusAPI.generateFilename(info, index), info.tags, {
+        thumbUrl: info.pageUrls[index]?.regular || info.urls.small || info.urls.regular || '',
+        title: info.title, artist: info.artist, workId: info.id, pageIndex: index
+      }, { dirHandle: handle, signal, epoch });
     }
   }
 
   async function downloadAllWork(info) {
     if (!info) return;
-    try {
+    return produce(async (signal, epoch) => {
       const handle = await getDirHandle(true);
       if (!handle) return false;
-      if (info.isUgoira) {
-        await downloadUgoiraWork(info, handle);
-        return;
-      }
-      queuePages(info, info.pageUrls.map((_, index) => index), handle);
-    } catch (err) {
-      window.PixivPlusDownloadPanel.showToast(`Could not download work: ${err.message}`, 'error');
-    }
+      checkCancelled(signal, epoch);
+      if (info.isUgoira) return downloadUgoiraWork(info, handle, signal, epoch);
+      return queuePages(info, info.pageUrls.map((_, index) => index), handle, signal, epoch);
+    });
   }
 
   async function downloadWorks(workIds) {
     const ids = [...new Set((workIds || []).map(String).filter(id => /^\d+$/.test(id)))];
-    if (ids.length === 0) return;
-    const handle = await getDirHandle(true);
-    if (!handle) return false;
-    for (const workId of ids) {
-      try {
-        const info = await window.PixivPlusAPI.getWorkInfo(workId);
-        if (info.isUgoira) await downloadUgoiraWork(info, handle);
-        else queuePages(info, info.pageUrls.map((_, index) => index), handle);
-      } catch (err) {
-        window.PixivPlusDownloadPanel.showToast(`Could not queue ${workId}: ${err.message}`, 'error');
-      }
-    }
-  }
-
-  async function downloadUgoiraWork(info, preparedHandle = undefined) {
-    const handle = preparedHandle === undefined ? await getDirHandle(true) : preparedHandle;
-    if (!handle) return false;
-    const ugoira = await window.PixivPlusAPI.getUgoiraMeta(info.id);
-    if (!ugoira.zipUrl) throw new Error('Ugoira ZIP unavailable');
-    const imageFilename = window.PixivPlusAPI.generateFilename(info, 0);
-    const base = imageFilename.replace(/\.[^.]+$/, '');
-    return downloadFile(ugoira.zipUrl, `${base}.zip`, [], {
-      thumbUrl: info.urls.small || info.urls.regular || '',
-      title: `${info.title} (Ugoira source)`,
-      artist: info.artist,
-      workId: info.id,
-      pageIndex: 0
-    }, {
-      dirHandle: handle,
-      companion: {
-        filename: `${base}.frames.json`,
-        type: 'application/json',
-        text: JSON.stringify({ illustId: info.id, frames: ugoira.frames }, null, 2)
+    if (!ids.length) return;
+    return produce(async (signal, epoch) => {
+      const handle = await getDirHandle(true);
+      if (!handle) return false;
+      for (const id of ids) {
+        checkCancelled(signal, epoch);
+        try {
+          const info = await window.PixivPlusAPI.getWorkInfo(id, { signal });
+          checkCancelled(signal, epoch);
+          if (info.isUgoira) await downloadUgoiraWork(info, handle, signal, epoch);
+          else await queuePages(info, info.pageUrls.map((_, index) => index), handle, signal, epoch);
+        } catch (error) {
+          checkCancelled(signal, epoch);
+          window.PixivPlusDownloadPanel.showToast(error.message, 'error');
+        }
       }
     });
   }
 
-  async function getAvailableFilename(dirHandle, filename) {
-    const dot = filename.lastIndexOf('.');
-    const base = dot > 0 ? filename.slice(0, dot) : filename;
-    const ext = dot > 0 ? filename.slice(dot) : '';
-    for (let index = 1; index < 1000; index++) {
-      const candidate = index === 1 ? filename : `${base} (${index})${ext}`;
-      try {
-        await dirHandle.getFileHandle(candidate);
-      } catch (err) {
-        if (err.name === 'NotFoundError') return candidate;
-        throw err;
-      }
-    }
-    return `${base} (${Date.now()})${ext}`;
+  async function downloadUgoiraWork(info, handle, signal, epoch) {
+    const ugoira = await window.PixivPlusAPI.getUgoiraMeta(info.id, { signal });
+    checkCancelled(signal, epoch);
+    if (!ugoira.zipUrl) throw new Error('Ugoira ZIP unavailable');
+    const base = window.PixivPlusAPI.generateFilename(info, 0).replace(/\.[^.]+$/, '');
+    return downloadFile(ugoira.zipUrl, base + '.zip', [], {
+      thumbUrl: info.urls.small || info.urls.regular || '', title: info.title,
+      artist: info.artist, workId: info.id, pageIndex: 0
+    }, { dirHandle: handle, signal, epoch,
+      companion: { filename: base + '.frames.json', text: JSON.stringify({ illustId: info.id, frames: ugoira.frames }, null, 2) }
+    });
   }
 
-  async function writeFile(dirHandle, filename, blob, policy = 'skip') {
-    const safeName = filename.replace(/[<>:"|?*]/g, '_');
-
-    if (policy !== 'overwrite') {
-      try {
-        await dirHandle.getFileHandle(safeName);
-        throw new Error(`File already exists: ${safeName}`);
-      } catch (err) {
-        if (err.name !== 'NotFoundError') throw err;
-      }
-    }
-
-    const fileHandle = await dirHandle.getFileHandle(safeName, { create: true });
-    const writable = await fileHandle.createWritable();
+  async function writeFiles(handle, files, job) {
+    const staged = [];
     try {
-      await writable.write(blob);
-      await writable.close();
-    } catch (err) {
-      await writable.abort().catch(() => {});
-      throw err;
+      for (const file of files) {
+        checkCancelled(job.controller.signal, job.epoch);
+        const completed = job.completedFiles.find(item => item.name === file.name);
+        if (completed) {
+          const actual = await (await handle.getFileHandle(file.name)).getFile();
+          if (actual.size !== completed.size || actual.lastModified !== completed.lastModified) {
+            throw new Error('Previously saved file changed; retry stopped: ' + file.name);
+          }
+          continue;
+        }
+        const exists = await fileExists(handle, file.name);
+        if (exists && job.duplicatePolicy !== 'overwrite') throw new Error('File already exists: ' + file.name);
+        checkCancelled(job.controller.signal, job.epoch);
+        const fileHandle = await handle.getFileHandle(file.name, { create: true });
+        const entry = { name: file.name, fileHandle, stream: null, created: !exists, closed: false };
+        staged.push(entry);
+        checkCancelled(job.controller.signal, job.epoch);
+        entry.stream = await fileHandle.createWritable();
+        entry.abort = () => { if (!job.committing) entry.stream.abort().catch(() => {}); };
+        job.controller.signal.addEventListener('abort', entry.abort, { once: true });
+        checkCancelled(job.controller.signal, job.epoch);
+        await entry.stream.write(file.blob);
+        checkCancelled(job.controller.signal, job.epoch);
+      }
+      checkCancelled(job.controller.signal, job.epoch);
+      // All staging is cancellable. close() is the filesystem commit point;
+      // do not promise cancellation after this point or abort half of a pair.
+      job.committing = true;
+      window.PixivPlusDownloadPanel.updateDownload({ id: job.id, filename: job.filename, state: 'in_progress', speed: 'Saving...', committing: true });
+      for (const entry of staged) {
+        await entry.stream.close();
+        entry.closed = true;
+        const saved = await entry.fileHandle.getFile();
+        job.completedFiles.push({ name: entry.name, size: saved.size, lastModified: saved.lastModified });
+      }
+    } finally {
+      for (const entry of staged) {
+        if (entry.abort) job.controller.signal.removeEventListener('abort', entry.abort);
+        if (entry.closed) continue;
+        await entry.stream?.abort().catch(() => {});
+        // Only remove an empty placeholder this job created, never an existing file.
+        if (entry.created) {
+          const file = await entry.fileHandle.getFile().catch(() => null);
+          if (file?.size === 0) await handle.removeEntry(entry.name).catch(() => {});
+        }
+      }
     }
   }
 
@@ -637,8 +595,10 @@
   // --- Multi-image selector ---
 
   let selectorHost = null;
+  let selectorClose = null;
 
   function showMultiImageSelector(info, preparedHandle = undefined) {
+    selectorClose?.();
     if (!selectorHost) createSelectorPanel();
     const shadow = selectorHost.shadowRoot;
     const grid = shadow.getElementById('pp-selector-grid');
@@ -655,7 +615,7 @@
       const selected = checkboxes.filter(c => c.checked).map(c => Number.parseInt(c.dataset.index, 10));
       const bytes = selected.reduce((sum, index) => sum + (sizes[index] || 0), 0);
       const sizeLabel = bytes > 0 ? ` · ~${formatBytes(bytes)}` : '';
-      shadow.getElementById('pp-selector-summary').textContent = `Selected ${selected.length}/${checkboxes.length}${sizeLabel}`;
+      shadow.getElementById('pp-selector-summary').textContent = (window.PixivPlusUI?.t('Selected') || 'Selected') + ` ${selected.length}/${checkboxes.length}${sizeLabel}`;
     };
 
     for (let i = 0; i < info.pageUrls.length; i++) {
@@ -671,11 +631,12 @@
       check.className = 'pp-selector-check';
       check.checked = true;
       check.dataset.index = i;
+      check.setAttribute('aria-label', `P${i + 1}`);
       checkboxes.push(check);
       const label = document.createElement('span');
       label.className = 'pp-selector-page-num';
       const ext = pageUrl.original.match(/\.([a-z0-9]+)$/i)?.[1]?.toUpperCase() || '';
-      label.textContent = `P${i} · ${ext}`;
+      label.textContent = `P${i + 1} · ${ext}`;
       const detail = document.createElement('span');
       detail.className = 'pp-selector-detail';
       img.addEventListener('load', () => {
@@ -705,21 +666,25 @@
     shadow.getElementById('pp-btn-select-first').onclick = () => { checkboxes.forEach((c, index) => c.checked = index === 0); updateSummary(); };
     shadow.getElementById('pp-btn-invert').onclick = () => { checkboxes.forEach(c => c.checked = !c.checked); updateSummary(); };
     shadow.getElementById('pp-btn-deselect-all').onclick = () => { checkboxes.forEach(c => c.checked = false); updateSummary(); };
-    shadow.getElementById('pp-btn-download-selected').onclick = async () => {
+    shadow.getElementById('pp-btn-download-selected').onclick = () => produce(async (signal, epoch) => {
       const selected = checkboxes.filter(c => c.checked).map(c => parseInt(c.dataset.index));
       if (selected.length === 0) return;
       const handle = preparedHandle === undefined ? await getDirHandle(true) : preparedHandle;
       if (!handle) return;
-      queuePages(info, selected, handle);
-      container.classList.remove('visible');
-    };
-    shadow.getElementById('pp-btn-cancel').onclick = () => container.classList.remove('visible');
+      checkCancelled(signal, epoch);
+      await queuePages(info, selected, handle, signal, epoch);
+      selectorClose?.();
+    });
+    shadow.getElementById('pp-btn-cancel').onclick = () => selectorClose?.();
     updateSummary();
     chrome.runtime.sendMessage({ type: 'estimateSizes', urls: info.pageUrls.map(page => page.original) }, response => {
       if (response?.sizes) response.sizes.forEach((size, index) => { sizes[index] = size; });
       updateSummary();
     });
     container.classList.add('visible');
+    container.setAttribute('aria-labelledby', 'pp-selector-title');
+    window.PixivPlusUI?.localize(shadow);
+    selectorClose = window.PixivPlusUI?.openDialog(container, () => { container.classList.remove('visible'); selectorClose = null; });
   }
 
   function formatBytes(bytes) {
@@ -840,28 +805,31 @@
 
     // Click backdrop to close
     container.addEventListener('click', (e) => {
-      if (e.target === container) container.classList.remove('visible');
+      if (e.target === container) selectorClose?.();
     });
 
     document.body.appendChild(selectorHost);
   }
 
-  function cancelDownload(url) {
-    const pendingIndex = pendingDownloads.findIndex(job => job.url === url);
-    if (pendingIndex >= 0) {
-      const [job] = pendingDownloads.splice(pendingIndex, 1);
-      job.cancelled = true;
-      reservedFilenames.delete(job.filename);
-      window.PixivPlusDownloadPanel.updateDownload({ filename: job.filename, state: 'cancelled' });
+  function cancelDownload(id) {
+    const index = pendingDownloads.findIndex(job => job.id === id);
+    if (index >= 0) {
+      const [job] = pendingDownloads.splice(index, 1);
+      job.controller.abort();
+      reservations.delete(job.id);
+      window.PixivPlusDownloadPanel.updateDownload({ id: job.id, filename: job.filename, state: 'cancelled' });
       return;
     }
-
-    activeDownloads.get(url)?.controller.abort();
+    const job = activeDownloads.get(id);
+    if (job && !job.committing) job.controller.abort();
   }
 
   function cancelAllDownloads() {
-    for (const job of [...pendingDownloads]) cancelDownload(job.url);
-    for (const job of [...activeDownloads.values()]) job.controller.abort();
+    downloadEpoch++;
+    for (const controller of producers) controller.abort();
+    for (const job of [...pendingDownloads]) cancelDownload(job.id);
+    for (const job of activeDownloads.values()) if (!job.committing) job.controller.abort();
+    selectorClose?.();
   }
 
   function toggleQueuePaused(force) {
@@ -870,18 +838,19 @@
     return queuePaused;
   }
 
-  function retryDownload(filename) {
-    const job = failedDownloads.get(filename);
+  async function retryDownload(id) {
+    const job = failedDownloads.get(id);
     if (!job) return false;
-    failedDownloads.delete(filename);
-    return downloadFile(job.url, job.filename, job.tags, job.meta, {
-      dirHandle: job.dirHandle,
-      duplicatePolicy: job.duplicatePolicy,
-      companion: job.companion
+    const accepted = await downloadFile(job.url, job.filename, job.tags, job.meta, {
+      id, dirHandle: job.dirHandle, duplicatePolicy: job.duplicatePolicy,
+      companion: job.companion, resumeFiles: job.completedFiles
     });
+    if (accepted) failedDownloads.delete(id);
+    return accepted;
   }
 
   window.PixivPlusDownload = {
+    isDialogOpen: () => Boolean(selectorHost?.shadowRoot?.getElementById('pp-selector-container')?.classList.contains('visible')),
     downloadFile,
     downloadWork,
     cancelDownload,

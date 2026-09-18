@@ -17,7 +17,19 @@ function harness(count = 5) {
   const context = {
     document: { readyState: 'loading', hidden: false, addEventListener() {} },
     location: { pathname: '/bookmark_new_illust.php' },
-    chrome: { i18n: { getMessage: () => '' } },
+    chrome: { i18n: { getMessage: () => '' }, runtime: { connect() {
+      const image = { src: 'pending' }; images.push(image);
+      let receive;
+      return {
+        onMessage: { addListener(fn) { receive = fn; } }, onDisconnect: { addListener() {} },
+        disconnect() { image.src = ''; image.onload = null; image.onerror = null; },
+        postMessage(message) {
+          image.src = message.url;
+          image.onload = () => { receive({ type: 'chunk', data: btoa('test-image') }); receive({ type: 'done', received: 10 }); };
+          image.onerror = () => receive({ type: 'error', error: 'Failed' });
+        }
+      };
+    } } },
     window: {
       PixivPlusWorkbenchModel: { createStore: () => store },
       PixivPlusAPI: {
@@ -30,7 +42,7 @@ function harness(count = 5) {
       PixivPlusDownloadPanel: { setWorkbenchActive() {} }
     },
     Date: { now: () => now },
-    DOMException, AbortController, console,
+    DOMException, AbortController, console, Blob, atob, crypto: require('node:crypto'), setInterval: () => 0,
     setTimeout: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
     clearTimeout: id => timers.delete(id),
     Image: class {
@@ -56,7 +68,9 @@ function harness(count = 5) {
       state() { return { completed: [...preloadedOriginalWorkIds], failed: [...failedOriginalWorkIds], running: !!preloadRun }; }
     };
   `;
-  vm.runInNewContext(source.replace('  window.PixivPlusWorkbench = {', hooks + '\n  window.PixivPlusWorkbench = {'), context);
+  vm.createContext(context);
+  vm.runInContext(fs.readFileSync(require.resolve('../lib/original-cache.js'), 'utf8'), context);
+  vm.runInContext(source.replace('  window.PixivPlusWorkbench = {', hooks + '\n  window.PixivPlusWorkbench = {'), context);
   return {
     ...context.window.test, images, timers, requests, states, notices, context,
     advance(ms) { now += ms; },
@@ -68,12 +82,13 @@ function harness(count = 5) {
   };
 }
 
-test('offscreen images release src, handlers and timers on success, error, timeout and abort', async () => {
+test('original transfers release ports and timers on success, error, timeout and abort', async () => {
   for (const outcome of ['success', 'error', 'timeout', 'abort']) {
     const h = harness();
     const controller = new AbortController();
     const pending = h.image('https://i.pximg.net/1.jpg', controller.signal);
     const checked = outcome === 'success' ? pending : assert.rejects(pending);
+    await flush();
     const image = h.images[0];
     if (outcome === 'success') image.onload();
     if (outcome === 'error') image.onerror();
@@ -164,6 +179,16 @@ test('disabling automatic loading does not allow the cancelled run to restart', 
   await h.run(false);
   assert.equal(h.images.length, 1);
   assert.equal(h.state().failed.length, 0);
+});
+
+test('expired originals do not auto-preload forever; an explicit reload refreshes them', async () => {
+  const h = harness(1);
+  const first = h.run(true); await flush(); h.images[0].onload(); await first;
+  h.advance(600000); h.context.window.PixivPlusOriginalCache.prune();
+  await h.run(false); assert.equal(h.images.length, 1);
+  const refresh = h.run(true); await flush(); assert.equal(h.images.length, 2);
+  h.images[1].onload(); await refresh;
+  assert.equal(h.context.window.PixivPlusOriginalCache.has('https://i.pximg.net/1.jpg'), true);
 });
 
 test('leaving cancels a scheduled adjacent-artwork prefetch before it makes requests', () => {

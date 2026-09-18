@@ -31,6 +31,9 @@
   "workbenchOriginalsProgress": { "message": "原图 {done}/{total}" },
   "workbenchOriginalsReady": { "message": "本页原图已加载" },
   "workbenchOriginalsPaused": { "message": "原图预加载已暂停" },
+  "workbenchDownloadWork": { "message": "下载作品…" },
+  "workbenchCollapseTags": { "message": "收起" },
+  "workbenchReadSaveFailed": { "message": "已读状态保存失败，请重试" },
   "workbenchOriginalsPartial": { "message": "有 {count} 张原图加载失败" },
   "workbenchFilterAll": { "message": "全部作品" },
   "workbenchFilterUnread": { "message": "未读作品" },
@@ -65,5 +68,13 @@
   "workbenchNotFound": { "message": "该作品已不可用" },
   "workbenchLoginRequired": { "message": "请登录 Pixiv 后查看该作品" },
   "workbenchLoadFailed": { "message": "无法加载该作品" },
+  "originalQueued": { "message": "首张原图等待加载" },
+  "workbenchOriginalsCached": { "message": "已缓存 {done}/{total}" },
+  "workbenchPreloadComplete": { "message": "原图预载完成" },
+  "originalLoading": { "message": "首张原图加载中" },
+  "originalCached": { "message": "首张原图已缓存 · 可直接保存" },
+  "originalFailed": { "message": "首张原图加载失败 · 点击加载本页原图重试" },
+  "originalPaused": { "message": "首张原图加载已暂停" },
+  "originalReleased": { "message": "首张原图缓存已释放 · 使用时重新加载" },
   "workbenchSummary": { "message": "共 {count} 件 · {unread} 件未读" }
 }
