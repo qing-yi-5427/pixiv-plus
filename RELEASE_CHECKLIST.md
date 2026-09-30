@@ -1,5 +1,14 @@
 # PixivPlus Release Checklist
 
+## Required release order
+
+1. Run the release tests and validation, then commit the release source and documentation.
+2. Merge or fast-forward the release into the repository's default branch (`master`) and push it to GitHub. Confirm the remote default branch contains the intended manifest version; pushing only a development branch is not sufficient.
+3. Verify the store ZIP matches the pushed source revision and record its SHA-256.
+4. Upload that package to Microsoft Edge Add-ons and submit the update. Report the actual certification/publication status.
+
+Always push the Git repository update before uploading a Microsoft store update.
+
 ## 2.2.0: workbench settings and shared original cache
 
 - [x] `npm run release:check`: 66 tests and manifest/permissions/locales/CSP validation passed.
