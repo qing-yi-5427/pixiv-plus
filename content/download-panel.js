@@ -756,12 +756,10 @@
       }
     }
 
-    if (data.committing) {
-      item.querySelector('.pp-dl-cancel').disabled = true;
-      item.querySelector('.pp-dl-remove').disabled = true;
-    } else if (data.state === 'queued') {
-      item.querySelector('.pp-dl-cancel').disabled = false;
-      item.querySelector('.pp-dl-remove').disabled = false;
+    if (data.committing || ['queued', 'complete', 'interrupted', 'cancelled'].includes(data.state)) {
+      const committing = Boolean(data.committing && data.state === 'in_progress');
+      item.querySelector('.pp-dl-cancel').disabled = committing;
+      item.querySelector('.pp-dl-remove').disabled = committing;
     }
     ui()?.localize(item);
     updateCount(shadow);

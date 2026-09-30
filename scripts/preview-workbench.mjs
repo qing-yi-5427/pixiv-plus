@@ -17,6 +17,12 @@ const locale = ${JSON.stringify(locale)};
 const listeners = [], files = new Map();
 let transfers = 0;
 const automatic = new URL(location.href).searchParams.has('preload');
+let failSave = new URL(location.href).searchParams.has('fail-save');
+if (new URL(location.href).searchParams.has('churn')) {
+  const marker = document.createElement('span'); marker.id = 'fixture-churn'; marker.hidden = true;
+  document.body.append(marker);
+  setInterval(() => { marker.textContent = String(Number(marker.textContent || 0) + 1); }, 100);
+}
 const getStored = () => JSON.parse(localStorage.getItem('pp-review-fixture') || '{}');
 const store = (patch, cb) => {
   const before = getStored(); localStorage.setItem('pp-review-fixture', JSON.stringify({...before,...patch}));
@@ -55,7 +61,7 @@ const folder = {
   name:'演示目录（不写入磁盘）',queryPermission:async()=> 'granted',requestPermission:async()=> 'granted',isSameEntry:async other=>other===folder,
   getFileHandle:async (name,options) => {
     if(!files.has(name)){if(!options?.create)throw new DOMException('Missing','NotFoundError');files.set(name,{size:0,lastModified:0});}
-    return {getFile:async()=>files.get(name),createWritable:async()=>{let blob;return {write:async value=>{blob=value},close:async()=>files.set(name,{size:blob.size,lastModified:Date.now()}),abort:async()=>{}}}};
+    return {getFile:async()=>files.get(name),createWritable:async()=>{let blob;return {write:async value=>{blob=value},close:async()=>{if(failSave){failSave=false;throw new Error('Simulated disk failure');}files.set(name,{size:blob.size,lastModified:Date.now()});},abort:async()=>{}}}};
   },removeEntry:async name=>files.delete(name)
 };
 window.showDirectoryPicker = async()=>folder;

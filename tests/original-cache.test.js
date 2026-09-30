@@ -13,6 +13,7 @@ function fixture(maxBytes) {
       const port = { disconnected: false, onMessage: { addListener(fn) { message = fn; } }, onDisconnect: { addListener(fn) { disconnect = fn; } },
         postMessage(value) { port.url = value.url; }, disconnect() { port.disconnected = true; disconnect(); },
         progress(received, total) { message({ type: 'progress', received, total }); },
+        send(value) { message(value); },
         complete(text = 'original-data') { message({ type: 'chunk', data: btoa(text) }); message({ type: 'done', received: text.length, contentType: 'image/png' }); },
         incomplete() { message({ type: 'chunk', data: btoa('partial') }); message({ type: 'done', received: 100 }); }
       }; ports.push(port); return port;
@@ -79,4 +80,24 @@ test('incomplete transfers are rejected and never reported as cached', async () 
   const h = fixture(); const load = h.api.get('broken'); const rejection = assert.rejects(load, /Incomplete/);
   await flush(); h.ports[0].incomplete(); await rejection;
   assert.equal(h.api.has('broken'), false);
+});
+
+test('invalid chunks reject immediately and late messages cannot restart the timer', async () => {
+  const h = fixture(); const load = h.api.get('broken');
+  const rejection = assert.rejects(load, /Invalid original image chunk/);
+  await flush();
+  assert.doesNotThrow(() => h.ports[0].send({ type: 'chunk', data: '%%%invalid%%%' }));
+  await rejection;
+  h.ports[0].send({ type: 'progress', received: 1, total: 2 });
+  assert.equal(h.timers.size, 0); assert.equal(h.api.has('broken'), false);
+});
+
+test('throwing progress observers cannot break cached or shared consumers', async () => {
+  const h = fixture(), faulty = () => { throw new Error('Observer failed'); };
+  const first = h.api.get('shared'); await flush(); h.ports[0].progress(1, 2);
+  const second = h.api.get('shared', { onProgress: faulty });
+  h.ports[0].complete();
+  assert.equal(await first, await second);
+  assert.equal(await h.api.get('shared', { onProgress: faulty }), await first);
+  assert.equal(h.ports.length, 1);
 });

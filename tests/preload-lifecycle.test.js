@@ -43,7 +43,7 @@ function harness(count = 5) {
     },
     Date: { now: () => now },
     DOMException, AbortController, console, Blob, atob, crypto: require('node:crypto'), setInterval: () => 0,
-    setTimeout: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
+    setTimeout: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms, due: now + ms }); return id; },
     clearTimeout: id => timers.delete(id),
     Image: class {
       constructor() { images.push(this); }
@@ -59,6 +59,15 @@ function harness(count = 5) {
     showToast = message => notices.push(message);
     window.test = {
       image: preloadOriginalImage, run: preloadCurrentPageOriginals,
+      schedule: scheduleAutoOriginalPreload,
+      enable() { preloadOriginalsByDefault = true; originalMode = true; },
+      addRecord(id) { store.all().push({ id }); store.size = store.all().length; },
+      setupPreview(url) {
+        currentInfo = { pageUrls: [{ original: 'https://i.pximg.net/1.jpg' }], urls: {} };
+        previewImage = { dataset: { originalUrl: url } };
+        window.previewRenders = 0;
+        showPage = () => { window.previewRenders++; previewImage.dataset.originalUrl = currentInfo.pageUrls[0].original; };
+      },
       visibility: onVisibilityChange, leave: deactivate, canLoad: canLoadInBackground,
       resume() { workspaceVisible = true; },
       stop: stopBackgroundLoading,
@@ -74,6 +83,10 @@ function harness(count = 5) {
   return {
     ...context.window.test, images, timers, requests, states, notices, context,
     advance(ms) { now += ms; },
+    tick(ms) {
+      now += ms;
+      for (const [id, timer] of [...timers]) if (timer.due <= now) { timers.delete(id); timer.fn(); }
+    },
     fire(ms) {
       for (const [id, timer] of [...timers]) {
         if (timer.ms === ms) { timers.delete(id); timer.fn(); }
@@ -200,4 +213,32 @@ test('leaving cancels a scheduled adjacent-artwork prefetch before it makes requ
   h.fire(700);
   assert.equal(h.requests.length, 0);
   assert.equal(h.timers.size, 0);
+});
+
+test('continuous feed scans cannot postpone the first automatic original preload', async () => {
+  const h = harness(1); h.enable(); h.schedule();
+  for (let i = 0; i < 20; i++) { h.tick(100); h.schedule(); await flush(); }
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.images.length, 1);
+  h.images[0].onload(); await flush();
+  for (let i = 0; i < 20; i++) { h.tick(100); h.schedule(); await flush(); }
+  assert.equal(h.requests.length, 1); assert.equal(h.images.length, 1);
+  assert.equal(h.timers.size, 0);
+});
+
+test('new feed artworks discovered during a run preload after that run finishes', async () => {
+  const h = harness(1); h.enable(); h.schedule(); h.tick(500); await flush();
+  h.addRecord('2'); h.schedule();
+  h.images[0].onload(); await flush(); h.tick(500); await flush();
+  assert.equal(h.requests.map(item => item.id).join(), '1,2');
+  h.images[1].onload(); await flush(); assert.equal(h.state().completed.length, 2);
+});
+
+test('preload completion preserves an already displayed blob original and only upgrades regular previews', async () => {
+  for (const [url, expected] of [['https://i.pximg.net/1.jpg', 0], ['', 1]]) {
+    const h = harness(1); h.enable(); h.setupPreview(url);
+    const run = h.run(false); await flush(); h.images[0].onload(); await run;
+    for (let i = 0; i < 20; i++) await h.run(false);
+    assert.equal(h.context.window.previewRenders, expected);
+  }
 });

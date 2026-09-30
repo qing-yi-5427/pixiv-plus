@@ -61,6 +61,7 @@ function downloads({ paused = true, embedWait = null, realFetch = false } = {}) 
       setLoader(fn) { loadDirHandle = fn; },
       setSaver(fn) { saveDirHandle = fn; },
       setSelector(fn) { showMultiImageSelector = fn; },
+      setSelectorHost(host) { selectorHost = host; }, showSelector: showMultiImageSelector,
       setMulti(value) { multiDownloadDefault = value; }
     };
   `;
@@ -193,6 +194,31 @@ test('directory changes reload handles in other existing tabs', async () => {
   assert.equal(b.hooks.pendingDownloads[0].dirHandle, next);
 });
 
+test('a failed directory reload does not poison subsequent directory changes', async () => {
+  const h = downloads(), old = directory(), next = directory();
+  h.hooks.setFolder(old);
+  h.hooks.setLoader(async () => { throw new Error('Temporary database failure'); });
+  h.changes.forEach(listener => listener({ downloadDirectoryChangedAt: { newValue: 'first' } }));
+  await flush();
+  h.hooks.setLoader(async () => next);
+  h.changes.forEach(listener => listener({ downloadDirectoryChangedAt: { newValue: 'second' } }));
+  await flush();
+  assert.equal(await h.api.downloadFile('url', 'recovered.jpg', [], {}), true);
+  assert.equal(h.hooks.pendingDownloads[0].dirHandle, next);
+});
+
+test('repeated retry clicks enqueue a failed job only once', async () => {
+  const h = downloads({ paused: false }), dir = directory();
+  h.hooks.setFetch(async () => { throw new Error('Network offline'); });
+  await h.api.downloadFile('url', 'retry.jpg', [], {}, { dirHandle: dir, duplicatePolicy: 'rename' });
+  await flush(); await flush();
+  const id = h.updates.at(-1).id;
+  h.api.toggleQueuePaused(true);
+  const accepted = await Promise.all([h.api.retryDownload(id), h.api.retryDownload(id)]);
+  assert.equal(accepted.filter(Boolean).length, 1);
+  assert.equal(h.hooks.pendingDownloads.length, 1);
+});
+
 test('artwork-level downloads honor ask/all and folder cancellation starts no jobs', async () => {
   const h = downloads(), dir = directory(); let opened = 0;
   h.hooks.setFolder(dir); h.hooks.setSelector(() => { opened++; });
@@ -204,6 +230,29 @@ test('artwork-level downloads honor ask/all and folder cancellation starts no jo
   h.ctx.window.showDirectoryPicker = async () => { throw new DOMException('Cancelled', 'AbortError'); };
   assert.equal(await h.api.downloadFile('url', 'new.jpg', [], {}), false);
   assert.equal(h.hooks.pendingDownloads.length, 0);
+});
+
+test('Shift page selection respects native checkbox activation and disables an empty download', () => {
+  for (const nativeCheckbox of [true, false]) {
+    const h = downloads();
+    const element = () => ({ children: [], dataset: {}, handlers: {}, classList: {add() {}},
+      appendChild(node) { this.children.push(node); }, setAttribute() {}, addEventListener(type, handler) { this.handlers[type] = handler; } });
+    const controls = new Map();
+    const shadow = { getElementById(id) { if (!controls.has(id)) controls.set(id, element()); return controls.get(id); } };
+    h.ctx.document = {createElement:element};
+    h.ctx.chrome.runtime.sendMessage = (message, callback) => callback?.({});
+    h.ctx.window.PixivPlusUI = {t:text=>text,localize(){},openDialog:()=>()=>{}};
+    h.hooks.setSelectorHost({shadowRoot:shadow});
+    h.hooks.showSelector({artist:'Artist',title:'Pages',pageCount:3,pageUrls:Array.from({length:3},()=>({original:'image.jpg'}))});
+    const items = shadow.getElementById('pp-selector-grid').children;
+    const checks = items.map(item => item.children[1]);
+    checks[0].checked = false;
+    items[0].handlers.click({target:checks[0],shiftKey:false});
+    if (nativeCheckbox) checks[2].checked = false;
+    items[2].handlers.click({target:nativeCheckbox ? checks[2] : items[2],shiftKey:true});
+    assert.ok(checks.every(check => !check.checked));
+    assert.equal(shadow.getElementById('pp-btn-download-selected').disabled, true);
+  }
 });
 
 function workbench() {
@@ -228,6 +277,13 @@ function workbench() {
     feedPageInput = { value: '12' }; feedPrevButton = {}; feedNextButton = {};
     shadow = { activeElement: feedPageInput };
     window.review = { bookmark: bookmarkCurrentWork, key: onKeyDown, pagination: syncFeedPagination,
+      clickThumbnail: onThumbnailClick,
+      setupBatch(records, anchor) {
+        batchMode = true; lastBatchWorkId = anchor; batchSelection.add(anchor);
+        store.all = () => records;
+        records.forEach(record => thumbElements.set(record.id,{hidden:record.hidden}));
+        renderBatchSelection = () => { window.selected = [...batchSelection]; };
+      },
       input: feedPageInput, blur() { shadow.activeElement = null; },
       choose(info) { currentWorkId = info.id; currentInfo = info; bookmarkButton.disabled = false; },
       native(fn) { nativeBookmarkButton = fn; }
@@ -267,6 +323,13 @@ test('shadow input and button events are not intercepted; pagination preserves f
   assert.equal(h.actions.length, 0);
   h.pagination(); assert.equal(h.input.value, '12');
   h.blur(); h.pagination(); assert.equal(h.input.value, '1');
+});
+
+test('Shift range selection includes only artworks visible in the current filter', () => {
+  const h = workbench();
+  h.setupBatch(['2', '3', '4', '5', '6', '7', '8'].map(id => ({id,hidden:['4','6'].includes(id)})), '2');
+  h.clickThumbnail({shiftKey:true}, '8');
+  assert.deepEqual(Array.from(h.ctx.window.selected), ['2', '3', '5', '7', '8']);
 });
 
 test('background serializes read/history deltas from multiple tabs', async () => {

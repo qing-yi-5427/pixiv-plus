@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.3.0 - 2026-09-30
+
+- Fix automatic original preloading being indefinitely delayed by repeated feed scans; schedule once, continue newly discovered works after the active run, and stop scheduling completed work.
+- Preserve displayed original previews and zoom when a preload batch finishes; reset stale image handlers on selection and restore previews after workbench/page lifecycle returns.
+- Keep Shift artwork selection within the visible filter, remove newly hidden selections, and fix Shift deselection on native multi-page checkboxes. Empty page selections cannot start a download.
+- Prevent repeated retry clicks from enqueuing the same failed download more than once; re-enable removal controls after final-save failures.
+- Recover directory synchronization after temporary database failures and handle aborted directory transactions without hanging.
+- Reject malformed chunks, incomplete bodies and HTML error pages instead of marking them cached or saved; release stream readers and ignore late messages after completion. Respect decoded versus compressed byte lengths.
+- Isolate progress-observer failures and bound download-size HEAD requests to 10 seconds.
+- Preserve the newest saved settings across cross-view writes and out-of-order acknowledgements; older errors cannot replace newer success status.
+- Make dialog cleanup idempotent and close dialogs before leaving the workbench so native page focus is restored.
+- Preserve unique page suffixes when long filename templates are truncated, and enforce the packaged-code-only CSP during release validation.
+- Expand the regression suite to 86 tests and add frequent-DOM-change and file-save-failure scenarios to the isolated browser fixture. No new permissions or changes to read state, directory choice, history or saved files.
+
 ## 2.2.0 - 2026-09-19
 
 - Added per-thumbnail byte-progress strips and truthful queued/loading/cached/failed/paused/released states, separate from unread markers.

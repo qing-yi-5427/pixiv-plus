@@ -11,6 +11,9 @@ if (manifest.manifest_version !== 3) errors.push('manifest_version must be 3');
 if (manifest.version !== pkg.version) errors.push('manifest.json and package.json versions differ');
 if (!manifest.name.startsWith('__MSG_')) errors.push('manifest name must be localized');
 if (!manifest.description.startsWith('__MSG_')) errors.push('manifest description must be localized');
+if (manifest.content_security_policy?.extension_pages !== "script-src 'self'; object-src 'self'; base-uri 'self'") {
+  errors.push('extension_pages CSP must allow bundled code only');
+}
 
 const allowedPermissions = new Set(['storage', 'declarativeNetRequest']);
 for (const permission of manifest.permissions || []) {
@@ -79,6 +82,7 @@ function readJson(path) {
 
 function* walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isDirectory() && ['.git', 'dist', 'node_modules', '_metadata'].includes(entry.name)) continue;
     const path = join(dir, entry.name);
     if (entry.isDirectory()) yield* walk(path);
     else yield path;

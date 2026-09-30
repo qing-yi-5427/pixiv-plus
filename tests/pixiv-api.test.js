@@ -166,6 +166,22 @@ test('Unicode filenames fit the UTF-8 filesystem byte budget without splitting e
   }
 });
 
+test('truncating a template never removes the unique multi-page suffix', () => {
+  const api = loadApi(async () => response({}));
+  for (const title of ['x'.repeat(100), '画'.repeat(100)]) {
+    const work = { id: '42', artist: 'Artist', title, pageCount: 2,
+      pageUrls: [{ original: 'https://i.pximg.net/42_p0.jpg' }, { original: 'https://i.pximg.net/42_p1.jpg' }] };
+    for (const template of ['{title}{title}{title}{page}', '{title}{page}{title}{title}']) {
+      const names = [0, 1].map(page => api.generateFilename(work, page, template));
+      assert.notEqual(names[0], names[1]);
+      names.forEach((name, page) => {
+        assert.ok(Buffer.byteLength(name) <= 220);
+        assert.ok(name.includes('_p' + page));
+      });
+    }
+  }
+});
+
 test('foreground metadata runs before queued background preloads', async () => {
   let release;
   const calls = [];

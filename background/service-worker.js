@@ -79,16 +79,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 async function estimateSizes(urls) {
+  if (!Array.isArray(urls) || urls.length > 1000) throw new Error('Invalid media URL list');
   const result = new Array(urls.length).fill(0);
   let nextIndex = 0;
   const workers = Array.from({ length: Math.min(4, urls.length) }, async () => {
     while (nextIndex < urls.length) {
       const index = nextIndex++;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
       try {
         assertAllowedMediaUrl(urls[index]);
-        const resp = await fetch(urls[index], { method: 'HEAD' });
-        if (resp.ok) result[index] = parseInt(resp.headers.get('content-length') || '0');
-      } catch {}
+        const resp = await fetch(urls[index], { method: 'HEAD', signal: controller.signal });
+        const size = Number(resp.headers.get('content-length'));
+        if (resp.ok && Number.isSafeInteger(size) && size > 0) result[index] = size;
+      } catch {} finally { clearTimeout(timeout); }
     }
   });
   await Promise.all(workers);
@@ -127,43 +131,55 @@ async function streamImage(url, port, signal) {
   const resp = await fetch(url, { signal });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
-  const contentLength = parseInt(resp.headers.get('content-length') || '0');
+  const contentType = resp.headers.get('content-type') || guessContentType(url);
+  if (!/^image\//i.test(contentType) && !/^application\/(?:zip|x-zip-compressed|octet-stream)(?:;|$)/i.test(contentType)) {
+    throw new Error('Unexpected original image content type');
+  }
+  const encoding = resp.headers.get('content-encoding');
+  const length = Number(resp.headers.get('content-length'));
+  // Fetch exposes decoded bytes, while compressed Content-Length is the wire size.
+  const contentLength = (!encoding || encoding.toLowerCase() === 'identity') && Number.isSafeInteger(length) && length > 0 ? length : 0;
+  if (!resp.body) throw new Error('Empty original image');
   const reader = resp.body.getReader();
   let received = 0;
   let lastTime = Date.now();
   let lastBytes = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    received += value.length;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.length;
+
+      safePost(port, {
+        type: 'chunk',
+        data: bytesToBase64(value)
+      });
+
+      const now = Date.now();
+      if (now - lastTime > 300) {
+        const elapsed = (now - lastTime) / 1000;
+        const speed = elapsed > 0 ? (received - lastBytes) / elapsed : 0;
+        safePost(port, {
+          type: 'progress',
+          received,
+          total: contentLength,
+          speed: formatSpeed(speed)
+        });
+        lastTime = now;
+        lastBytes = received;
+      }
+    }
+
+    if (!received || (contentLength && received !== contentLength)) throw new Error('Incomplete original image');
 
     safePost(port, {
-      type: 'chunk',
-      data: bytesToBase64(value)
+      type: 'done',
+      received,
+      total: contentLength,
+      contentType
     });
-
-    const now = Date.now();
-    if (now - lastTime > 300) {
-      const elapsed = (now - lastTime) / 1000;
-      const speed = elapsed > 0 ? (received - lastBytes) / elapsed : 0;
-      safePost(port, {
-        type: 'progress',
-        received,
-        total: contentLength,
-        speed: formatSpeed(speed)
-      });
-      lastTime = now;
-      lastBytes = received;
-    }
-  }
-
-  safePost(port, {
-    type: 'done',
-    received,
-    total: contentLength,
-    contentType: resp.headers.get('content-type') || guessContentType(url)
-  });
+  } finally { reader.releaseLock(); }
 }
 
 function assertAllowedMediaUrl(rawUrl) {

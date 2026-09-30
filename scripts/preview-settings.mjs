@@ -3,13 +3,15 @@ import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '..');
+const version = JSON.parse(readFileSync(resolve(root, 'manifest.json'), 'utf8')).version;
+const port = Number(process.env.PIXIVPLUS_SETTINGS_PREVIEW_PORT || 4177);
 const mock = `
 const listeners = [];
 const read = () => JSON.parse(localStorage.getItem('settings-preview') || '{}');
 window.chrome = {
   i18n: {getUILanguage: () => new URLSearchParams(location.search).get('lang') || 'zh-CN'},
   runtime: {
-    getManifest: () => ({version:'2.2.0 · Preview'}),
+    getManifest: () => ({version:${JSON.stringify(version + ' · Preview')}}),
     openOptionsPage: () => window.open('/popup/popup.html?view=page'),
     sendMessage: (msg, cb) => {
       if (msg.type === 'getSettings') return cb(PixivPlusSettings.normalize(read()));
@@ -39,4 +41,4 @@ createServer((req, res) => {
   if (pathname.endsWith('.html')) body = body.replace('<script src="../lib/settings.js">', '<script src="/preview-api.js"></script><script src="../lib/settings.js">');
   res.setHeader('Content-Type', pathname.endsWith('.html') ? 'text/html; charset=utf-8' : pathname.endsWith('.css') ? 'text/css' : 'text/javascript');
   res.end(body);
-}).listen(4177, '127.0.0.1', () => console.info('Settings UI fixture: http://127.0.0.1:4177/popup/popup.html?view=page'));
+}).listen(port, '127.0.0.1', () => console.info(`Settings UI fixture: http://127.0.0.1:${port}/popup/popup.html?view=page`));

@@ -13,6 +13,7 @@
   let downloadEpoch = 0;
   const producers = new Set();
   const failedDownloads = new Map(); // job id -> job
+  const retryingDownloads = new Set();
   let maxConcurrentDownloads = 3;
   let duplicatePolicy = 'skip';
   let multiDownloadDefault = 'ask';
@@ -30,10 +31,15 @@
   });
   chrome.storage.onChanged.addListener(changes => {
     if (changes.downloadDirectoryResetAt || changes.downloadDirectoryChangedAt) {
-      dirHandleLoad = Promise.resolve(dirHandleLoad).then(async () => {
+      dirHandleLoad = Promise.resolve(dirHandleLoad).catch(() => null).then(async () => {
+        // Never silently keep an obsolete destination if reloading fails.
+        dirHandle = null;
         dirHandle = await loadDirHandle();
         window.PixivPlusDownloadPanel?.setFolderName(dirHandle?.name || 'not selected');
         return dirHandle;
+      }).catch(() => {
+        window.PixivPlusDownloadPanel?.setFolderName('not selected');
+        return null;
       });
     }
     if (changes.downloadConcurrency) {
@@ -66,6 +72,7 @@
       tx.objectStore('handles').put(handle, 'downloadDir');
       tx.oncomplete = () => { db.close(); resolve(); };
       tx.onerror = () => { db.close(); reject(tx.error); };
+      tx.onabort = () => { db.close(); reject(tx.error || new Error('Directory storage aborted')); };
     });
   }
 
@@ -76,6 +83,7 @@
       const req = tx.objectStore('handles').get('downloadDir');
       req.onsuccess = () => { db.close(); resolve(req.result || null); };
       req.onerror = () => { db.close(); resolve(null); };
+      tx.onabort = () => { db.close(); resolve(null); };
     });
   }
 
@@ -616,6 +624,7 @@
       const bytes = selected.reduce((sum, index) => sum + (sizes[index] || 0), 0);
       const sizeLabel = bytes > 0 ? ` · ~${formatBytes(bytes)}` : '';
       shadow.getElementById('pp-selector-summary').textContent = (window.PixivPlusUI?.t('Selected') || 'Selected') + ` ${selected.length}/${checkboxes.length}${sizeLabel}`;
+      shadow.getElementById('pp-btn-download-selected').disabled = selected.length === 0;
     };
 
     for (let i = 0; i < info.pageUrls.length; i++) {
@@ -650,7 +659,9 @@
         if (e.shiftKey && lastSelected >= 0) {
           const from = Math.min(lastSelected, i);
           const to = Math.max(lastSelected, i);
-          const value = !check.checked;
+          // Native checkbox activation has already toggled checked before
+          // this bubbling handler; clicking the tile has not.
+          const value = e.target === check ? check.checked : !check.checked;
           for (let index = from; index <= to; index++) checkboxes[index].checked = value;
         } else if (e.target !== check) {
           check.checked = !check.checked;
@@ -840,13 +851,18 @@
 
   async function retryDownload(id) {
     const job = failedDownloads.get(id);
-    if (!job) return false;
-    const accepted = await downloadFile(job.url, job.filename, job.tags, job.meta, {
-      id, dirHandle: job.dirHandle, duplicatePolicy: job.duplicatePolicy,
-      companion: job.companion, resumeFiles: job.completedFiles
-    });
-    if (accepted) failedDownloads.delete(id);
-    return accepted;
+    if (!job || retryingDownloads.has(id) || activeDownloads.has(id)
+      || pendingDownloads.some(pending => pending.id === id)) return false;
+    retryingDownloads.add(id);
+    failedDownloads.delete(id);
+    try {
+      const accepted = await downloadFile(job.url, job.filename, job.tags, job.meta, {
+        id, dirHandle: job.dirHandle, duplicatePolicy: job.duplicatePolicy,
+        companion: job.companion, resumeFiles: job.completedFiles
+      });
+      if (!accepted && !failedDownloads.has(id)) failedDownloads.set(id, job);
+      return accepted;
+    } finally { retryingDownloads.delete(id); }
   }
 
   window.PixivPlusDownload = {

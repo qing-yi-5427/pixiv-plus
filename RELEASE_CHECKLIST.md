@@ -9,6 +9,18 @@
 
 Always push the Git repository update before uploading a Microsoft store update.
 
+## 2.3.0: full regression audit and reliability fixes
+
+- [x] Reviewed workbench lifecycle, automatic/manual originals, shared cache, bookmarks, read state, downloads, directory changes, settings and packaging.
+- [x] Added behavioral regressions for preload starvation, discovered-during-run works, preview stability, visible-only artwork ranges, native page-checkbox ranges, repeated retry, failed directory recovery, malformed/truncated media, HEAD timeouts, settings races and modal cleanup.
+- [x] Isolated browser fixture: 100ms native DOM changes still reached 12/12 cached originals, with no scan-driven reload loop; saving/retrying a cache hit left transfer count at 12.
+- [x] Isolated browser fixture: independent feed scrolling, persistent read state after reload, in-page bookmark state, file-save failure/retry/removal controls, visible-only range selection, empty multi-page selection and restored focus.
+- [x] Final `npm run release:check`: 86 tests, manifest/permissions/locales/CSP validation and build passed. ZIP integrity passed; all 21 runtime files match release source bytes.
+- Package: `dist/pixiv-plus-2.3.0.zip`; SHA-256: `b9448813d42ee066a3e2c04bef87a21ee3596d7aefbe7be74a46178c381bda1a`. The 2.2.0 archive checksum is unchanged.
+- Release destination: default branch `master`, with a `v2.3.0` tag. Confirm the remote commit/version after pushing and report that evidence in the delivery message.
+- [ ] Re-test the installed extension in the user's authenticated Edge profile after reload. The isolated fixture does not prove live Pixiv APIs, extension CSP/permissions or physical filesystem writes.
+- This request prepares and pushes GitHub 2.3.0 only. No Microsoft Store upload or certification is implied.
+
 ## 2.2.0: workbench settings and shared original cache
 
 - [x] `npm run release:check`: 66 tests and manifest/permissions/locales/CSP validation passed.

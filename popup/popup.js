@@ -10,6 +10,8 @@
   document.body.classList.toggle('full-page', fullPage);
   const app = document.getElementById('settings-app');
   const controls = new Map(), panels = new Map(), tabs = [], pending = new Map();
+  const observedChanges = new Map();
+  const acknowledgedWrites = new Map();
   let settings, sequence = 0;
   let status, content, folderName, folderHint, resetFolder, filenameInput, filenameError, singleSample, multiSample, returnButton;
 
@@ -42,6 +44,7 @@
   function save(patch) {
     try { patch = S.validatePatch(patch); } catch { return; }
     const revision = ++sequence;
+    const observed = new Map(Object.keys(patch).map(key => [key, observedChanges.get(key)]));
     for (const key of Object.keys(patch)) pending.set(key, revision);
     setStatus(t('正在保存…', 'Saving…'), 'pending');
     // Send immediately so closing the popup cannot discard a queued write.
@@ -49,14 +52,22 @@
     return (async () => {
       try {
         await request({ type: 'saveSettings', ...patch });
-        Object.assign(settings, patch);
+        for (const [key, value] of Object.entries(patch)) {
+          if ((acknowledgedWrites.get(key) || 0) > revision) continue;
+          acknowledgedWrites.set(key, revision);
+          if (observedChanges.get(key) === observed.get(key)) settings[key] = value;
+        }
         if (revision === sequence) setStatus(t('已保存 · 即时生效', 'Saved · applied immediately'));
       } catch {
-        setStatus(t('保存失败，请重试刚才的修改', 'Could not save. Please retry your change.'), 'error');
+        if (revision === sequence) setStatus(t('保存失败，请重试刚才的修改', 'Could not save. Please retry your change.'), 'error');
         for (const key of Object.keys(patch)) if (pending.get(key) === revision) renderControl(key, settings[key]);
         if (patch.filenameTemplate !== undefined) updateSamples();
       } finally {
-        for (const key of Object.keys(patch)) if (pending.get(key) === revision) pending.delete(key);
+        for (const key of Object.keys(patch)) {
+          if (pending.get(key) !== revision) continue;
+          pending.delete(key);
+          if (key !== 'filenameTemplate' || document.activeElement !== filenameInput) renderControl(key, settings[key]);
+        }
         dependencies();
       }
     })();
@@ -104,6 +115,21 @@
   function dependencies() {
     const warning = document.getElementById('overwrite-warning');
     if (warning) warning.hidden = controls.get('duplicatePolicy').read() !== 'overwrite';
+  }
+  function onSettingsChanged(changes, area) {
+    if (area !== 'local') return;
+    for (const key of Object.keys(changes)) {
+      if (!controls.has(key)) continue;
+      const value = S.normalize({ [key]: changes[key].newValue })[key];
+      settings[key] = value;
+      observedChanges.set(key, (observedChanges.get(key) || 0) + 1);
+      // Keep drafts stable, but retain the newest persisted baseline even
+      // while this view is waiting for a save acknowledgement.
+      if (pending.has(key) || (key === 'filenameTemplate' && document.activeElement === filenameInput)) continue;
+      renderControl(key, value);
+    }
+    dependencies();
+    if (document.activeElement !== filenameInput) updateSamples();
   }
   function panel(key, title, description, ...children) {
     const section = el('section', { id: `panel-${key}`, role: 'tabpanel', 'aria-labelledby': `tab-${key}`, tabindex: '0' },
@@ -271,18 +297,7 @@
     app.setAttribute('aria-busy', 'false');
     refreshDirectory();
     window.addEventListener('focus', refreshDirectory);
-    chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== 'local') return;
-      for (const key of Object.keys(changes)) {
-        if (!controls.has(key) || pending.has(key)) continue;
-        const value = S.normalize({ [key]: changes[key].newValue })[key];
-        settings[key] = value;
-        if (key === 'filenameTemplate' && document.activeElement === filenameInput) continue;
-        renderControl(key, value);
-      }
-      dependencies();
-      if (document.activeElement !== filenameInput) updateSamples();
-    });
+    chrome.storage.onChanged.addListener(onSettingsChanged);
   }
   init().catch(() => {
     app.replaceChildren(el('div', { class: 'load-error', role: 'alert' }, el('h1', {}, t('设置暂时无法加载', 'Settings could not load')),

@@ -53,7 +53,7 @@
   let workspaceVisible = false;
   let focusMode = false;
   let batchMode = false;
-  let lastBatchIndex = -1;
+  let lastBatchWorkId = null;
   let scanQueued = false;
   let nativeLoadRequested = false;
   let leftWidth = 340;
@@ -152,7 +152,9 @@
     });
     window.addEventListener('pageshow', () => {
       pageSuspended = false;
+      const wasVisible = workspaceVisible;
       syncRoute();
+      if (wasVisible && workspaceVisible && currentInfo) showPage(currentPage);
       onVisibilityChange();
     });
     onVisibilityChange();
@@ -514,11 +516,13 @@
   function showWorkbench() {
     if (!isWorkbenchRoute() || pageSuspended) return;
     ensureUI();
+    const returning = !workspaceVisible;
     workspaceVisible = true;
     window.PixivPlusUI?.setWorkbenchActive(true);
     shell.hidden = false;
     window.PixivPlusDownloadPanel?.setWorkbenchActive(true);
     if (currentWorkId && !currentInfo && selectionController?.signal.aborted) selectWork(currentWorkId, false);
+    else if (returning && currentInfo) showPage(currentPage);
     scheduleInfoIslandPosition();
     syncFeedPagination();
     scheduleScan();
@@ -557,6 +561,7 @@
   function deactivate() {
     if (!workspaceVisible) return;
     workspaceVisible = false;
+    window.PixivPlusUI?.closeDialog?.();
     window.PixivPlusUI?.setWorkbenchActive(false);
     selectionController?.abort();
     previewController?.abort();
@@ -685,11 +690,13 @@
       selectWork(id);
       return;
     }
-    const index = store.indexOf(id);
-    if (event.shiftKey && lastBatchIndex >= 0) {
-      const [start, end] = [Math.min(lastBatchIndex, index), Math.max(lastBatchIndex, index)];
+    const visible = visibleRecords();
+    const index = visible.findIndex(record => record.id === id);
+    const anchor = visible.findIndex(record => record.id === lastBatchWorkId);
+    if (event.shiftKey && anchor >= 0 && index >= 0) {
+      const [start, end] = [Math.min(anchor, index), Math.max(anchor, index)];
       const shouldSelect = !batchSelection.has(id);
-      store.all().slice(start, end + 1).forEach(record => {
+      visible.slice(start, end + 1).forEach(record => {
         if (shouldSelect) batchSelection.add(record.id);
         else batchSelection.delete(record.id);
       });
@@ -698,7 +705,7 @@
     } else {
       batchSelection.add(id);
     }
-    lastBatchIndex = index;
+    lastBatchWorkId = id;
     renderBatchSelection();
   }
 
@@ -758,7 +765,11 @@
     loading.hidden = false;
     error.hidden = true;
     previewImage.hidden = true;
+    previewImage.onload = null;
+    previewImage.onerror = null;
+    previewImage.dataset.originalUrl = '';
     previewImage.removeAttribute('src');
+    if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = null; }
     shadow.getElementById('ppw-current-title').textContent = record.title || `${t('workbenchArtwork', 'Artwork')} ${record.id}`;
     title.textContent = record.title || `${t('workbenchArtwork', 'Artwork')} ${record.id}`;
     facts.textContent = t('workbenchLoadingDetails', 'Loading artwork details…');
@@ -843,6 +854,7 @@
       error.hidden = false;
     };
     previewImage.src = url;
+    previewImage.dataset.originalUrl = cached || url === originalUrl ? originalUrl : '';
     const multi = currentInfo.pageUrls.length > 1;
     shadow.getElementById('ppw-page-nav').hidden = !multi;
     pageLabel.textContent = multi ? `${currentPage + 1} / ${currentInfo.pageUrls.length}` : '';
@@ -987,10 +999,10 @@
     shadow.getElementById('ppw-batch-toggle').classList.toggle('active', batchMode);
     if (!batchMode) {
       batchSelection.clear();
-      lastBatchIndex = -1;
+      lastBatchWorkId = null;
     } else if (currentWorkId) {
       batchSelection.add(currentWorkId);
-      lastBatchIndex = store.indexOf(currentWorkId);
+      lastBatchWorkId = currentWorkId;
     }
     renderBatchSelection();
   }
@@ -1013,12 +1025,18 @@
   function applyFilter() {
     if (!shadow) return;
     const filter = shadow.getElementById('ppw-filter').value;
+    let selectionChanged = false;
     for (const record of store.all()) {
       const visible = filter === 'all'
         || (filter === 'unread' && (record.id === currentWorkId || !seenWorkIds.has(record.id)));
       const button = thumbElements.get(record.id);
       if (button) button.hidden = !visible;
+      if (!visible) {
+        if (batchSelection.delete(record.id)) selectionChanged = true;
+        if (lastBatchWorkId === record.id) lastBatchWorkId = null;
+      }
     }
+    if (selectionChanged) renderBatchSelection();
     const visible = visibleRecords();
     if (visible.length && !visible.some(record => record.id === currentWorkId)) selectWork(visible[0].id, false);
     emptyState.hidden = store.size > 0 && visible.length > 0;
@@ -1231,8 +1249,12 @@
 
   function scheduleAutoOriginalPreload() {
     if ((!preloadOriginalsByDefault && !manualPreloadRequested) || !canLoadInBackground() || store.size === 0) return;
-    clearTimeout(autoPreloadTimer);
-    autoPreloadTimer = setTimeout(() => preloadCurrentPageOriginals(false), 500);
+    if (preloadRun || autoPreloadTimer !== null) return;
+    if (!store.all().some(record => !preloadedOriginalWorkIds.has(record.id) && !failedOriginalWorkIds.has(record.id))) return;
+    autoPreloadTimer = setTimeout(() => {
+      autoPreloadTimer = null;
+      preloadCurrentPageOriginals(false);
+    }, 500);
   }
 
   function preloadOriginalImage(url, signal, onProgress) {
@@ -1267,6 +1289,8 @@
   function preloadCurrentPageOriginals(manual) {
     if (preloadRun) return preloadRun;
     if (manual) {
+      clearTimeout(autoPreloadTimer);
+      autoPreloadTimer = null;
       originalMode = true;
       manualPreloadRequested = true;
       failedOriginalWorkIds.clear();
@@ -1352,7 +1376,7 @@
       updatePreloadButton(finished, total, failed === total ? 'idle' : 'ready');
       if (currentInfo && originalMode) {
         const url = currentInfo.pageUrls[currentPage]?.original || currentInfo.urls.original;
-        if (url && previewImage.getAttribute('src') !== url) showPage(currentPage);
+        if (url && previewImage.dataset.originalUrl !== url) showPage(currentPage);
       }
       const message = failed
         ? t('workbenchOriginalsPartial', '{count} originals could not be loaded').replace('{count}', String(failed))
