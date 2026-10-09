@@ -56,6 +56,7 @@
   "workbenchShortcutDownload": { "message": "下载" },
   "workbenchShortcutBookmark": { "message": "收藏" },
   "workbenchShortcutFocus": { "message": "专注模式" },
+  "workbenchImageDragHint": { "message": "直接拖动图片到其他窗口；放大后按住 Shift 拖动图片，或拖动空白处来平移。已缓存时拖出原图文件，否则提供原图地址，由接收窗口处理。" },
   "workbenchArtwork": { "message": "作品" },
   "workbenchUgoiraBadge": { "message": "动图" },
   "workbenchLoadingDetails": { "message": "正在加载作品信息…" },

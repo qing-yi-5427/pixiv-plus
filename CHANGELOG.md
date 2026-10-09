@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.0 - 2026-10-09
+
+- Enable native drag-out from the workbench preview at every zoom level. Offer the current page's original URL and escaped image HTML to other windows; cached originals also provide their exact bytes as a file without starting another image request, download job or directory picker.
+- Keep zoomed-image panning available with Shift + drag, the middle mouse button, touch, or dragging the empty background. Add localized drag/pan hints.
+- Keep drag-export object URLs independent of preview changes, bound them to one export, and clean them up after drag completion or page exit.
+- Add 11 drag/pan regression tests (97 total) and an isolated cross-document drop fixture. Receiving applications control which offered formats they accept and may choose their own filenames.
+- No new permissions or changes to read state, directory choice, download history or existing saved files.
+
 ## 2.3.0 - 2026-09-30
 
 - Fix automatic original preloading being indefinitely delayed by repeated feed scans; schedule once, continue newly discovered works after the active run, and stop scheduling completed work.

@@ -16,7 +16,11 @@
   const failedOriginalWorkIds = new Set();
   const originalStates = new Map(); // artwork id -> first-page URL, state and byte progress
   let previewObjectUrl = null;
+  let previewBlob = null;
   let previewController = null;
+  let imageDragActive = false;
+  let dragObjectUrl = null;
+  let dragReleaseTimer = null;
   const seenWorkIds = new Set();
   const pendingSeenIds = new Set();
   const bookmarkRequests = new Set();
@@ -146,6 +150,7 @@
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('pagehide', () => {
       pageSuspended = true;
+      releaseDragExport();
       previewController?.abort();
       clearTimeout(backgroundIdleTimer);
       stopBackgroundLoading();
@@ -276,7 +281,8 @@
       .ppw-view-head { height:52px;flex:0 0 52px;display:flex;align-items:center;gap:7px;padding:0 12px;background:var(--ppw-surface);border-bottom:1px solid var(--ppw-line); }
       .ppw-current-title { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;margin-right:auto; }
       .ppw-stage { position:relative;min-height:0;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:26px 54px;background:radial-gradient(circle at center,var(--ppw-surface),var(--ppw-bg) 75%);touch-action:none; }
-      .ppw-image { display:block;max-width:100%;max-height:100%;object-fit:contain;transform-origin:center;user-select:none;-webkit-user-drag:none;box-shadow:0 18px 48px rgb(0 0 0/.22); }
+      .ppw-image { display:block;max-width:100%;max-height:100%;object-fit:contain;transform-origin:center;user-select:none;-webkit-user-drag:element;cursor:grab;box-shadow:0 18px 48px rgb(0 0 0/.22); }
+      .ppw-stage[data-panning="true"],.ppw-stage[data-panning="true"] .ppw-image { cursor:grabbing; }
       .ppw-image[hidden] { display:none; }
       .ppw-loading, .ppw-error { position:absolute;inset:0;display:grid;place-items:center;color:var(--ppw-muted);text-align:center;padding:30px; }
       .ppw-loading[hidden], .ppw-error[hidden] { display:none; }
@@ -379,7 +385,7 @@
           <div class="ppw-stage" id="ppw-stage">
             <div class="ppw-loading" id="ppw-loading"><div class="ppw-spinner" aria-label="Loading"></div></div>
             <div class="ppw-error" id="ppw-error" hidden></div>
-            <img class="ppw-image" id="ppw-image" alt="" hidden>
+            <img class="ppw-image" id="ppw-image" alt="" draggable="true" hidden>
             <button class="ppw-work-nav ppw-work-prev" id="ppw-work-prev" type="button" aria-label="Previous artwork">‹</button>
             <button class="ppw-work-nav ppw-work-next" id="ppw-work-next" type="button" aria-label="Next artwork">›</button>
             <div class="ppw-page-nav" id="ppw-page-nav" hidden>
@@ -464,6 +470,8 @@
     shadow.getElementById('ppw-shortcut-download').textContent = t('workbenchShortcutDownload', 'download');
     shadow.getElementById('ppw-shortcut-bookmark').textContent = t('workbenchShortcutBookmark', 'bookmark');
     shadow.getElementById('ppw-shortcut-focus').textContent = t('workbenchShortcutFocus', 'focus');
+    previewImage.title = t('workbenchImageDragHint', 'Drag the image to another window. When zoomed in, Shift-drag the image or drag the background to pan.');
+    shadow.getElementById('ppw-zoom-reset').title = previewImage.title;
   }
 
   function bindEvents() {
@@ -500,6 +508,9 @@
     shadow.getElementById('ppw-stage').addEventListener('pointermove', onPointerMove);
     shadow.getElementById('ppw-stage').addEventListener('pointerup', onPointerUp);
     shadow.getElementById('ppw-stage').addEventListener('pointercancel', onPointerUp);
+    shadow.getElementById('ppw-stage').addEventListener('lostpointercapture', onPointerUp);
+    previewImage.addEventListener('dragstart', onImageDragStart);
+    previewImage.addEventListener('dragend', onImageDragEnd);
     details.addEventListener('mouseenter', scheduleInfoIslandPosition);
     details.addEventListener('mouseleave', scheduleInfoIslandPosition);
     window.addEventListener('resize', scheduleInfoIslandPosition, { passive: true });
@@ -565,6 +576,7 @@
     window.PixivPlusUI?.setWorkbenchActive(false);
     selectionController?.abort();
     previewController?.abort();
+    previewBlob = null;
     if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = null; }
     stopBackgroundLoading();
     window.PixivPlusAPI.pruneCaches();
@@ -768,6 +780,7 @@
     previewImage.onload = null;
     previewImage.onerror = null;
     previewImage.dataset.originalUrl = '';
+    previewBlob = null;
     previewImage.removeAttribute('src');
     if (previewObjectUrl) { URL.revokeObjectURL(previewObjectUrl); previewObjectUrl = null; }
     shadow.getElementById('ppw-current-title').textContent = record.title || `${t('workbenchArtwork', 'Artwork')} ${record.id}`;
@@ -826,6 +839,7 @@
     const originalUrl = page?.original || currentInfo.urls.original || '';
     const regularUrl = page?.regular || currentInfo.urls.regular || currentInfo.urls.small;
     const cached = loadedBlob || (originalMode && window.PixivPlusOriginalCache.peek(originalUrl));
+    previewBlob = cached || null;
     if (previewObjectUrl) URL.revokeObjectURL(previewObjectUrl);
     previewObjectUrl = cached ? URL.createObjectURL(cached) : null;
     const url = previewObjectUrl || regularUrl || originalUrl;
@@ -1096,8 +1110,14 @@
   }
 
   function onPointerDown(event) {
-    if (zoom <= 1 || event.button !== 0 || event.target.closest?.('button')) return;
+    if (zoom <= 1 || imageDragActive || ![0, 1].includes(event.button)
+      || event.target.closest?.('button,a,input,select,textarea,.ppw-details')) return;
+    // Leave a plain mouse drag on the image to the browser, at every zoom.
+    // Shift/middle-button, touch, and the empty stage still pan the canvas.
+    if (event.target === previewImage && event.button === 0 && !event.shiftKey && event.pointerType !== 'touch') return;
+    event.preventDefault();
     pointerStart = { id: event.pointerId, x: event.clientX, y: event.clientY, panX, panY };
+    event.currentTarget.dataset.panning = 'true';
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
@@ -1111,7 +1131,64 @@
   function onPointerUp(event) {
     if (!pointerStart || pointerStart.id !== event.pointerId) return;
     pointerStart = null;
+    event.currentTarget.dataset.panning = 'false';
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+
+  function onImageDragStart(event) {
+    if (!currentInfo || previewImage.hidden || pointerStart || event.shiftKey || !event.dataTransfer) {
+      event.preventDefault();
+      return;
+    }
+    const originalUrl = currentInfo.pageUrls[currentPage]?.original || currentInfo.urls.original;
+    const imageUrl = originalUrl || previewImage.currentSrc || previewImage.src;
+    if (!imageUrl) { event.preventDefault(); return; }
+    let url;
+    try { url = new URL(imageUrl, location.href); } catch { event.preventDefault(); return; }
+    if (!['http:', 'https:'].includes(url.protocol)) { event.preventDefault(); return; }
+
+    // dragstart must remain synchronous. Never fetch, open a folder picker,
+    // or enqueue a download here; only attach already-available bytes.
+    const blob = window.PixivPlusOriginalCache.peek(originalUrl)
+      || (previewImage.dataset.originalUrl === originalUrl ? previewBlob : null);
+    const filename = window.PixivPlusAPI.generateFilename(currentInfo, currentPage);
+    const mime = (blob?.type.startsWith('image/') && blob.type) || ({ JPG: 'image/jpeg', JPEG: 'image/jpeg', PNG: 'image/png',
+      GIF: 'image/gif', WEBP: 'image/webp', AVIF: 'image/avif' }[extensionFromUrl(url.href)] || 'application/octet-stream');
+    releaseDragExport();
+    imageDragActive = true;
+    const transfer = event.dataTransfer;
+    transfer.effectAllowed = 'copyLink';
+    transfer.setData('text/uri-list', url.href);
+    transfer.setData('text/plain', url.href);
+    const escape = value => String(value).replace(/[&<>"']/g, character => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[character]));
+    transfer.setData('text/html', `<img src="${escape(url.href)}" alt="${escape(previewImage.alt)}">`);
+    if (blob) {
+      // Web upload targets receive a real File with the existing naming rule.
+      // Preserve the browser's native image payload if file items are unsupported.
+      try { transfer.items?.add(new File([blob], filename, { type: mime })); } catch {}
+      // Independent of the preview URL: changing artworks or finishing preload
+      // must not revoke a file that the destination window is still consuming.
+      dragObjectUrl = URL.createObjectURL(blob);
+    }
+    // Chromium desktop file-drop support; other targets use File/HTML/URL above.
+    transfer.setData('DownloadURL', `${mime}:${filename}:${dragObjectUrl || url.href}`);
+  }
+
+  function onImageDragEnd() {
+    imageDragActive = false;
+    // Native destinations may consume the promised file after drop/dragend.
+    // Release this bounded, single-export URL after a short grace period.
+    if (dragObjectUrl) dragReleaseTimer = setTimeout(releaseDragExport, 60_000);
+  }
+
+  function releaseDragExport() {
+    clearTimeout(dragReleaseTimer);
+    dragReleaseTimer = null;
+    if (dragObjectUrl) URL.revokeObjectURL(dragObjectUrl);
+    dragObjectUrl = null;
+    imageDragActive = false;
   }
 
   function setZoom(value) {

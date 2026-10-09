@@ -70,6 +70,32 @@ Object.defineProperty(window, 'indexedDB', {value: {open(){const request={};setT
 `;
 createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if (url.pathname === '/drag-test.html') {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.end(`<!doctype html><html lang="zh-CN"><meta charset="UTF-8"><title>PixivPlus · 跨页面拖拽测试</title>
+      <style>body{margin:0;display:grid;grid-template-columns:minmax(0,1fr) 280px;height:100vh;font:14px system-ui;background:#f5f7fa}iframe{border:0;width:100%;height:100%}aside{padding:16px;overflow:auto}#drop{padding:60px 12px;border:2px dashed #0096fa;border-radius:12px;background:white;text-align:center}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}</style>
+      <iframe id="source" src="/bookmark_new_illust.php${url.searchParams.has('preload') ? '?preload' : ''}" title="工作台"></iframe>
+      <aside><h3>独立页面接收区</h3><p>从左侧工作台拖入。仅本地测试，不上传、不保存文件。</p><div id="drop">拖动图片到这里</div><p id="source-events">等待图片拖拽</p><h4>接收结果</h4><pre id="result">尚未收到图片</pre></aside>
+      <script>
+      const drop = document.getElementById('drop'), result = document.getElementById('result');
+      document.getElementById('source').addEventListener('load', event => {
+        const sourceDocument = event.target.contentDocument;
+        for(const type of ['pointerdown','dragstart','dragend']) sourceDocument.addEventListener(type, event => {
+          const target = event.composedPath()[0];
+          if(target.id !== 'ppw-image') return;
+          document.getElementById('source-events').textContent = type+' · trusted='+event.isTrusted+' · prevented='+event.defaultPrevented;
+        });
+      });
+      drop.addEventListener('dragover', event => {event.preventDefault();event.dataTransfer.dropEffect='copy';});
+      drop.addEventListener('drop', async event => {
+        event.preventDefault();
+        const record = {trusted:event.isTrusted,types:[...event.dataTransfer.types],url:event.dataTransfer.getData('text/uri-list'),
+          html:event.dataTransfer.getData('text/html'),download:event.dataTransfer.getData('DownloadURL'),files:[]};
+        for(const file of event.dataTransfer.files) record.files.push({name:file.name,type:file.type,size:file.size,text:await file.text()});
+        result.textContent=JSON.stringify(record,null,2);drop.textContent='已收到图片 · '+record.files.length+' 个文件';
+      });
+      </script></html>`);
+  }
   if (url.pathname === '/fixture.js') { res.setHeader('Content-Type', 'text/javascript'); return res.end(mock); }
   if (url.pathname === '/sample.svg') {
     res.setHeader('Content-Type', 'image/svg+xml');

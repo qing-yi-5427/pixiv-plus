@@ -56,6 +56,7 @@
   "workbenchShortcutDownload": { "message": "download" },
   "workbenchShortcutBookmark": { "message": "bookmark" },
   "workbenchShortcutFocus": { "message": "focus" },
+  "workbenchImageDragHint": { "message": "Drag the image to another window. When zoomed in, Shift-drag the image or drag the background to pan. Cached originals include a file; otherwise the receiving window handles the original URL." },
   "workbenchArtwork": { "message": "Artwork" },
   "workbenchUgoiraBadge": { "message": "Ugoira" },
   "workbenchLoadingDetails": { "message": "Loading artwork details…" },
