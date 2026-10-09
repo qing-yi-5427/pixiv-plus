@@ -17,8 +17,9 @@ Always push the Git repository update before uploading a Microsoft store update.
 - [x] Native Edge observed an unblocked trusted drag start. Cross-window drops into every external application are not established by the fixture or automated native input.
 - [x] Final `npm run release:check`: 97 tests and manifest/permissions/locales/CSP validation passed. ZIP integrity passed and all 21 runtime files match release source bytes; verify this comparison again against the pushed revision before upload.
 - Package: `dist/pixiv-plus-2.4.0.zip`; SHA-256: `90e5d2f66619c3094050aac0e54f49685bdec37bc41370f5e37a454338e40984`. The 2.3.0 archive checksum is unchanged.
-- [ ] Push default branch `master` and tag `v2.4.0` before Microsoft Store upload.
-- [ ] Upload and submit the unchanged verified package; record the actual Partner Center status separately from public availability.
+- [x] Pushed default branch `master` and tag `v2.4.0` at `4d643c7e667ebe4cd0f45652e651d64b5f3d9e72` before Microsoft Store upload. All 21 packaged runtime files match that tag byte-for-byte.
+- [x] Uploaded and submitted the unchanged verified package through the authenticated Partner Center UI on 2026-10-09. Publish API credentials were masked, so no API key was renewed or stored.
+- Partner Center verified at 2026-10-09 22:27 Asia/Shanghai: 2.4.0 `In review`, 2.3.0 `Live`. Local receipt: `dist/pixiv-plus-2.4.0-edge-submission.json`; proof: `dist/edge-store-2.4-submitted.png`. Submission is not public availability.
 
 ## 2.3.0: full regression audit and reliability fixes
 
@@ -30,7 +31,7 @@ Always push the Git repository update before uploading a Microsoft store update.
 - Package: `dist/pixiv-plus-2.3.0.zip`; SHA-256: `b9448813d42ee066a3e2c04bef87a21ee3596d7aefbe7be74a46178c381bda1a`. The 2.2.0 archive checksum is unchanged.
 - Release destination: default branch `master`, with a `v2.3.0` tag. Confirm the remote commit/version after pushing and report that evidence in the delivery message.
 - [ ] Re-test the installed extension in the user's authenticated Edge profile after reload. The isolated fixture does not prove live Pixiv APIs, extension CSP/permissions or physical filesystem writes.
-- Submitted to Microsoft Edge Add-ons through the Publish API on 2026-10-01. Submission `1152921505702012659` was still in review on 2026-10-02; submission does not establish public availability.
+- Submitted to Microsoft Edge Add-ons through the Publish API on 2026-10-01. Submission `1152921505702012659` was still in review on 2026-10-02; Partner Center showed 2.3.0 `Live` on 2026-10-09.
 
 ## 2.2.0: workbench settings and shared original cache
 
